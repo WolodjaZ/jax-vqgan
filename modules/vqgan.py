@@ -4,7 +4,6 @@ from typing import Any, Callable, Dict, Optional, Tuple
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-from config import VQGANConfig
 from einops import rearrange
 from flax.core.frozen_dict import FrozenDict
 from transformers import PretrainedConfig
@@ -45,7 +44,7 @@ class VectorQuantizer(nn.Module):
 
     Attributes:
         config (VQGANConfig): the config of the model.
-        dtype (jnp.dtype): the dtype of the computation (default: float32).
+        dtype (jnp.dtype): the dtype of the computation for embeddings (default: float32).
     
     Config Attributes:
         n_embed (int) : number of embeddings.
@@ -55,15 +54,18 @@ class VectorQuantizer(nn.Module):
     dtype: jnp.dtype = jnp.float32
     
     def setup(self):
-        init_embbedings = jax.nn.initializers.uniform(scale=-1.0 / self.config.n_embed, dtype=self.dtype)
-        self.embeddings = nn.Embed(self.config.n_embed,
+        init_embbeding = jax.nn.initializers.uniform(scale=-1.0 / self.config.n_embed, dtype=self.dtype)
+        self.embedding = nn.Embed(self.config.n_embed,
                               self.config.embed_dim,
-                              embedding_init=init_embbedings,
+                              embedding_init=init_embbeding,
                               dtype=self.dtype)
     
     def __call__(self, z: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
         # flatten z
         z_flatten = z.reshape(-1, self.config.embed_dim)
+        
+        # dummy op to init the weights, so we can access them below
+        self.embedding(jnp.ones((1, 1), dtype="i4"))
         
         # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
         emb_weights = self.variables["params"]["embedding"]["embedding"]
@@ -83,10 +85,16 @@ class VectorQuantizer(nn.Module):
         # here we return the embeddings and indices
         return z_q, min_encoding_indices
 
-    def get_codebook_entry(self, indices: jnp.ndarray, shape: Optional[Tuple[int]] = None) -> jnp.ndarray:
+    @staticmethod
+    def get_codebook_entry(params: FrozenDict, indices: jnp.ndarray, shape: Optional[Tuple[int]] = None) -> jnp.ndarray:
+        "Get the codebook entry for a given index. Input is expected to be of shape (batch, num_tokens)"
         # indices are expected to be of shape (batch, num_tokens)
         # get quantized latent vectors
-        z_q = self.embedding(indices)
+        B = indices.shape[0]
+        indices = indices.reshape(-1,)
+        emb_weights = params["embedding"]["embedding"]
+        z_q = jnp.take(emb_weights, indices, axis=0).reshape(B, -1)
+        # z_q = self.embedding(indices) but can't use this because of jax and not accessibility of self.embedding
         
         if shape is not None:
             z_q = z_q.reshape(shape)
@@ -127,10 +135,10 @@ class GumbelQuantize(nn.Module):
             dtype=self.dtype,
         )
         # Embeddings (codebook)
-        init_embbedings = jax.nn.initializers.uniform(scale=-1.0 / self.config.n_embed, dtype=self.dtype)
-        self.embeddings = nn.Embed(self.config.n_embed,
+        init_embbeding = jax.nn.initializers.uniform(scale=-1.0 / self.config.n_embed, dtype=self.dtype)
+        self.embedding = nn.Embed(self.config.n_embed,
                               self.config.embed_dim,
-                              embedding_init=init_embbedings,
+                              embedding_init=init_embbeding,
                               dtype=self.dtype)
     
     def __call__(self, z: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -140,27 +148,36 @@ class GumbelQuantize(nn.Module):
         # given logits, sample from the Gumbel-Softmax distribution
         gumbel_rng = self.make_rng("gumbel")
         gumbels = jax.random.gumbel(gumbel_rng, logits.shape, dtype=self.dtype)
-        indicies_prob = nn.softmax((logits + gumbels) / self.config.gumb_temp)
+        indicies_prob = nn.softmax((logits + gumbels) / self.config.gumb_temp, axis=-1)
+
+        # dummy op to init the weights, so we can access them below
+        self.embedding(jnp.ones((1, 1), dtype="i4"))
         
         # get quantized latent vectors
         emb_weights = self.variables["params"]["embedding"]["embedding"]
-        z_q = jax.einsum("bhwp,pd->bhwd", indicies_prob, emb_weights).reshape(z.shape)
+        z_q = jnp.einsum("bhwp,pd->bhwd", indicies_prob, emb_weights).reshape(z.shape)
         
-        # get indices [BxHxWxP] -> [BxHxW]
+        # get indices [BxHxWxP] -> [BxH*W]
         indices = jnp.argmax(indicies_prob, axis=-1).reshape(z.shape[0], -1)
 
         # compute the codebook_loss (q_loss) outside the model
         # here we return the embeddings, indices and logits (for loss)
         return z_q, indices, logits
 
-    def get_codebook_entry(self, indices: jnp.ndarray, shape: Tuple[int]) -> jnp.ndarray:
+    @staticmethod
+    def get_codebook_entry(params: FrozenDict, indices: jnp.ndarray, shape: Optional[Tuple[int]] = None) -> jnp.ndarray:
+        "Get the codebook entry for a given index. Input is expected to be of shape (batch, num_tokens)"
         # indices are expected to be of shape (batch, num_tokens)
         # get quantized latent vectors
-        b, h, w, _ = shape
-        assert h*w == indices.shape[1]
-        indices = rearrange(indices, 'b (h w) -> b h w', b=b, h=h, w=w)
-        one_hot_indices = jax.nn.one_hot(indices, self.config.n_embed, dtype=self.dtype)
-        z_q = self.embedding(one_hot_indices)
+        B = indices.shape[0]
+        indices = indices.reshape(-1,)
+        emb_weights = params["embedding"]["embedding"]
+        z_q = jnp.take(emb_weights, indices, axis=0).reshape(B, -1)
+        # z_q = self.embedding(indices) but can't use this because of jax and not accessibility of self.embedding
+        
+        if shape is not None:
+            z_q = z_q.reshape(shape)
+        
         return z_q
 
 
@@ -179,7 +196,7 @@ class VQModule(nn.Module):
     
     def setup(self):
         # Set activation function
-        self.config.act_fn: Callable = ACTFUN[self.config.act_fn]
+        self.config.act_fn: Callable = ACTFUN[self.config.act_name]
         # Encoder
         self.encoder = Encoder(self.config, dtype=self.dtype)
         # Map last channel of encoder to embedding dim for VQ
@@ -212,7 +229,7 @@ class VQModule(nn.Module):
         # Pre-quantizer
         z = self.pre_quantizer(z)
         # Quantizer
-        z_q, indices, logits = self.quantizer(z) if self.config.use_gumbel else self.quantizer(z), None
+        z_q, indices, logits = self.quantizer(z) if self.config.use_gumbel else self.quantizer(z) + (None, )
         # Post-quantizer
         z_q = self.post_quantizer(z_q)
         return z_q, indices, logits
@@ -226,8 +243,9 @@ class VQModule(nn.Module):
     
     def decode_code(self, code: jnp.ndarray, z_shape: Tuple[int]) -> jnp.ndarray:
         """Decode already created z_code"""
-        z_q = self.quantizer.get_codebook_entry(code, shape=z_shape)
-        x = self.decode(z_q)
+        params = self.variables["params"]['quantizer']
+        z_q = self.quantizer.get_codebook_entry(params=params, indices=code, shape=z_shape)
+        x = self.decode(z_q, deterministic=True)
         return x
     
     def __call__(self, x: jnp.ndarray, deterministic: bool = True) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -265,18 +283,20 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
                    input_shape: Tuple) -> FrozenDict:
         # initialize model
         input = jnp.zeros(input_shape, dtype=self.dtype)
-        params_rng, dropout_rng = jax.random.split(rng)
-        rngs = {"params": params_rng, "dropout": dropout_rng}
+        params_rng, dropout_rng, gumble_rng = jax.random.split(rng, num=3)
+        rngs = {"params": params_rng, "dropout": dropout_rng, "gumble": gumble_rng}
         
         return self.module.init(rngs, input)["params"]
 
     def encode(self, 
                input: jnp.ndarray, 
-               params: Optional[Dict[str, Any]] = None,
+               params:  Optional[FrozenDict] = None,
                dropout_rng: Optional[jax.random.PRNGKey] = None,
+               gumble_rng: Optional[jax.random.PRNGKey] = None,
                train: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
+        rngs["gumble"] = gumble_rng if gumble_rng is not None else {}
         return self.module.apply({"params": params or self.params},
                                 jnp.array(input),
                                 not train,
@@ -285,17 +305,19 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
     
     def decode(self,
                 z: jnp.ndarray,
-                params: Optional[Dict[str, Any]] = None,
+                params: Optional[FrozenDict] = None,
                 dropout_rng: Optional[jax.random.PRNGKey] = None,
+                gumble_rng: Optional[jax.random.PRNGKey] = None,
                 train: bool = False) -> jnp.ndarray:
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
+        rngs["gumble"] = gumble_rng if gumble_rng is not None else {}
         return self.module.apply({"params": params or self.params},
                                 z,not train,
                                 rngs=rngs,
                                 method=self.module.decode)
         
-    def decode_code(self, indices: jnp.ndarray, params: dict = None):
+    def decode_code(self, indices: jnp.ndarray, params: Optional[FrozenDict] = None) -> jnp.ndarray:
         return self.module.apply({"params": params or self.params},
                              indices,
                              self.config.z_shape,
@@ -303,18 +325,16 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
     
     def __call__(self,
                 input: jnp.ndarray,
-                params: Optional[Dict[str, Any]] = None,
+                params: Optional[FrozenDict] = None,
                 dropout_rng: Optional[jax.random.PRNGKey] = None,
+                gumble_rng: Optional[jax.random.PRNGKey] = None,
                 train: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
-
+        rngs["gumble"] = gumble_rng if gumble_rng is not None else {}
         return self.module.apply(
             {"params": params or self.params},
-            jnp.array(input),
-            not train,
-            rngs=rngs,
-        )
+            input, not train, rngs=rngs)
 
 
 class VQModel(VQGANPreTrainedModel):

@@ -2,10 +2,10 @@ from typing import Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
-from config import VQGANConfig
 from einops import rearrange
 from flax import linen as nn
 
+from modules.config import VQGANConfig
 
 class Upsample(nn.Module):
     """Upsample the input by a factor of 2.
@@ -30,7 +30,7 @@ class Upsample(nn.Module):
             x = nn.Conv(
                 features=self.in_channels, 
                 kernel_size=(3, 3),
-                stride=(1, 1),
+                strides=(1, 1),
                 padding=((1, 1), (1, 1)), 
                 dtype=self.dtype)(x)
         return x
@@ -56,7 +56,7 @@ class Downsample(nn.Module):
             x = nn.Conv(
                 features=self.in_channels, 
                 kernel_size=(3, 3),
-                stride=(2, 2),
+                strides=(2, 2),
                 padding="VALID",
                 dtype=self.dtype)(x)
         else:
@@ -71,14 +71,15 @@ class ResNetBlock(nn.Module):
         out_channels (Optional[int]): number of output channels.
             If None, the output channels will be the same as the input channels.
         act_fn (Callable): activation function.
+        use_conv_shortcut (bool): whether to use a convolutional shortcut.
         temb_channels (int): number of channels in the temporal embedding.
         dropout_prob (float): dropout probability.
         dtype (jnp.dtype): the dtype of the computation (default: float32).
     """
     in_channels: int
     out_channels: Optional[int] = None
-    act_fn : Callable
-    conv_shortcut: bool = False
+    act_fn : Callable = nn.gelu
+    use_conv_shortcut: bool = False
     temb_channels: int = 512
     dropout_prob: float = 0.0
     dtype: jnp.dtype = jnp.float32
@@ -104,17 +105,17 @@ class ResNetBlock(nn.Module):
             self.temb_proj = nn.Dense(self.out_channels_, dtype=self.dtype)
         
         # Second block
-        self.block2  =  nn.Sequential([
+        self.block2_pre  =  nn.Sequential([
             nn.GroupNorm(num_groups=32, epsilon=1e-6),
-            self.act_fn,
-            nn.Dropout(self.dropout_prob),
-            nn.Conv(
-                self.out_channels_,
-                kernel_size=(3, 3),
-                strides=(1, 1),
-                padding=((1, 1), (1, 1)),
-                dtype=self.dtype,
-            )])
+            self.act_fn])
+        self.block2_drop = nn.Dropout(self.dropout_prob)
+        self.bloc2_conv = nn.Conv(
+            self.out_channels_,
+            kernel_size=(3, 3),
+            strides=(1, 1),
+            padding=((1, 1), (1, 1)),
+            dtype=self.dtype,
+        )
         
         # if output x channels do not match residual channels, we need to project residual
         if self.in_channels != self.out_channels_:
@@ -149,9 +150,12 @@ class ResNetBlock(nn.Module):
         residual = x
         x = self.block1(x)
         if temb is not None:
-            x = x + self.temb_proj(self.act_fn(x))[:, None, None, :] #TODO: check if this is correct [B, 1, 1, C]
+            # transform temporal embedding to match hidden states [BxT] -> [BxC] -> [Bx1x1xC]
+            x = x + self.temb_proj(self.act_fn(temb))[:, None, None, :]
         
-        x = self.block2(x)
+        x = self.block2_pre(x)
+        x = self.block2_drop(x, deterministic=deterministic)
+        x = self.bloc2_conv(x)
         if self.in_channels != self.out_channels_:
             if self.use_conv_shortcut:
                 residual = self.conv_shortcut(residual)
@@ -244,13 +248,14 @@ class UpsamplingBlock(nn.Module):
 
         # get output numb of channels based on config and current block index
         block_out: int = self.config.ch * self.config.ch_mult[self.block_idx]
-        # temporary embedding channels
+        # temporary embedding channels UpsamplingBlock don't use temporal embedding
         self.temb_ch: int = 0
         
         #build blocks
         res_blocks = []
         attn_blocks = []
         for _ in range(self.config.num_res_blocks + 1):
+            assert block_in % 32 == 0, "block_in must be divisible by 32 for GroupNorm"
             res_blocks.append(
                 ResNetBlock(block_in,
                             block_out,
@@ -262,6 +267,7 @@ class UpsamplingBlock(nn.Module):
             block_in = block_out
             # check if we need to add attention block based on configs
             if self.curr_res in self.config.attn_resolutions:
+                assert block_in % 32 == 0, "block_in must be divisible by 32 for GroupNorm"
                 attn_blocks.append(AttnBlock(block_in, dtype=self.dtype))
         
         self.blocks = res_blocks
@@ -274,23 +280,24 @@ class UpsamplingBlock(nn.Module):
                                self.config.resamp_with_conv,
                                dtype=self.dtype)
         
-        def __call__(self, x: jnp.ndarray, temb: Optional[int] = None, deterministic: bool = True) -> jnp.ndarray:
-            """Forward pass of the block.
-            Args:
-                x (jnp.ndarray): input tensor.
-                temb (Optional[int], optional): temporal embedding. Defaults to None.
-                deterministic (bool, optional): deterministic flag. Defaults to True.
-            """
-            for i, res_block in enumerate(self.blocks):
-                x = res_block(x, temb, deterministic=deterministic)
+    def __call__(self, x: jnp.ndarray, temb: Optional[int] = None, deterministic: bool = True) -> jnp.ndarray:
+        """Forward pass of the block.
+        Args:
+            x (jnp.ndarray): input tensor.
+            temb (Optional[int], optional): temporal embedding. Defaults to None.
+            deterministic (bool, optional): deterministic flag. Defaults to True.
+        """
+        assert temb is None, "UpsamplingBlock don't use temporal embedding"
+        for i, res_block in enumerate(self.blocks):
+            x = res_block(x, temb, deterministic=deterministic)
                 
-                if self.attns:
-                    x = self.attns[i](x)
+            if self.attns:
+                x = self.attns[i](x)
                 
-            if self.upsample is not None:
-                x = self.upsample(x)
+        if self.upsample is not None:
+            x = self.upsample(x)
             
-            return x
+        return x
 
 
 class DownsamplingBlock(nn.Module):
@@ -320,10 +327,11 @@ class DownsamplingBlock(nn.Module):
         res_blocks = []
         attn_blocks = []
         for _ in range(self.config.num_res_blocks):
+            assert block_in % 32 == 0, "block_in must be divisible by 32 for GroupNorm"
             res_blocks.append(
                 ResNetBlock(block_in,
                             block_out,
-                            act_fun=self.config.act_fn,
+                            act_fn=self.config.act_fn,
                             temb_channels=self.temb_ch,
                             dropout_prob=self.config.dropout,
                             dtype=self.dtype))
@@ -331,6 +339,7 @@ class DownsamplingBlock(nn.Module):
             block_in = block_out
             # check if we need to add attention block based on configs
             if self.curr_res in self.config.attn_resolutions:
+                assert block_in % 32 == 0, "block_in must be divisible by 32 for GroupNorm"
                 attn_blocks.append(AttnBlock(block_in, dtype=self.dtype))
         
         self.blocks = res_blocks
@@ -343,23 +352,24 @@ class DownsamplingBlock(nn.Module):
                                self.config.resamp_with_conv,
                                dtype=self.dtype)
         
-        def __call__(self, x: jnp.ndarray, temb: Optional[int] = None, deterministic: bool = True) -> jnp.ndarray:
-            """Forward pass of the block.
-            Args:
-                x (jnp.ndarray): input tensor.
-                temb (Optional[int], optional): temporal embedding. Defaults to None.
-                deterministic (bool, optional): deterministic flag. Defaults to True.
-            """
-            for i, res_block in enumerate(self.blocks):
-                x = res_block(x, temb, deterministic=deterministic)
+    def __call__(self, x: jnp.ndarray, temb: Optional[int] = None, deterministic: bool = True) -> jnp.ndarray:
+        """Forward pass of the block.
+        Args:
+            x (jnp.ndarray): input tensor.
+            temb (Optional[int], optional): temporal embedding. Defaults to None.
+            deterministic (bool, optional): deterministic flag. Defaults to True.
+        """
+        assert temb is None, "DownsamplingBlock don't use temporal embedding"
+        for i, res_block in enumerate(self.blocks):
+            x = res_block(x, temb, deterministic=deterministic)
                 
-                if self.attns:
-                    x = self.attns[i](x)
+            if self.attns:
+                x = self.attns[i](x)
                 
-            if self.downsample is not None:
-                x = self.downsample(x)
+        if self.downsample is not None:
+            x = self.downsample(x)
             
-            return x
+        return x
 
 
 class MidBlock(nn.Module):
@@ -387,6 +397,7 @@ class MidBlock(nn.Module):
             temb (Optional[int], optional): temporal embedding. Defaults to None.
             deterministic (bool, optional): deterministic flag. Defaults to True.
         """
+        assert self.in_channels % 32 == 0, "block_in must be divisible by 32 for GroupNorm"
         x = ResNetBlock(
             self.in_channels,
             self.in_channels,
@@ -452,17 +463,16 @@ class Encoder(nn.Module):
 
             # update resolution if not bottleneck
             curr_res = curr_res // 2 if i != self.config.num_resolutions - 1 else curr_res
-        
         # middle
         mid_channels = self.config.ch * self.config.ch_mult[-1]
         x = MidBlock(mid_channels,
-                    act_fun=self.config.act_fn,
+                    act_fn=self.config.act_fn,
                     temb_channels=temb_ch,
                     dropout_prob=self.config.dropout,
                     dtype=self.dtype)(x, temb, deterministic=deterministic)
         
         # end CFN
-        x = nn.GroupNorm(groups=32, dtype=self.dtype)(x)
+        x = nn.GroupNorm(num_groups=32, dtype=self.dtype)(x)
         x = self.config.act_fn(x)
         x = nn.Conv(
             2 * self.config.z_channels
@@ -518,7 +528,7 @@ class Decoder(nn.Module):
         
         # middle
         x = MidBlock(block_in,
-                    act_fun=self.config.act_fn,
+                    act_fn=self.config.act_fn,
                     temb_channels=temb_ch,
                     dropout_prob=self.config.dropout,
                     dtype=self.dtype)(x, temb, deterministic=deterministic)
@@ -541,7 +551,7 @@ class Decoder(nn.Module):
             return x
         
         # CFN
-        x = nn.GroupNorm(groups=32, dtype=self.dtype)(x)
+        x = nn.GroupNorm(num_groups=32, dtype=self.dtype)(x)
         x = self.config.act_fn(x)
         x = nn.Conv(
             self.config.out_ch,
