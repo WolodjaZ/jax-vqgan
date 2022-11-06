@@ -26,6 +26,7 @@ class VQGANConfig(PretrainedConfig):
         give_pre_end (bool): whether to give the pre-end layer for the decoder.
         kwargs: keyword arguments passed along to the super class.
     """
+
     def __init__(
         self,
         ch: int = 128,
@@ -34,7 +35,7 @@ class VQGANConfig(PretrainedConfig):
         num_res_blocks: int = 2,
         resolution: int = 256,
         z_channels: int = 256,
-        ch_mult: Tuple[int] = (1, 1, 2, 2, 4),
+        ch_mult: Tuple[int, ...] = tuple([1, 1, 2, 2, 4]),
         attn_resolutions: Tuple[int] = (16,),
         n_embed: int = 1024,
         embed_dim: int = 256,

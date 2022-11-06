@@ -1,0 +1,59 @@
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.3.0
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+        exclude: "config/run_id.txt"
+    -   id: check-yaml
+        exclude: "mkdocs.yml"
+    -   id: check-added-large-files
+        args: ['--maxkb=1000']
+        exclude: "notebooks"
+    -   id: check-ast
+    -   id: check-json
+    -   id: check-merge-conflict
+    -   id: detect-aws-credentials
+    -   id: detect-private-key
+-   repo: https://github.com/psf/black
+    rev: 22.3.0
+    hooks:
+    -   id: black
+        args: []
+        files: .
+-   repo: https://gitlab.com/PyCQA/flake8
+    rev: 3.9.2
+    hooks:
+    -   id: flake8
+        args: ["--max-line-length=100"]
+-   repo: https://github.com/PyCQA/isort
+    rev: 5.10.1
+    hooks:
+    -   id: isort
+        args: []
+        files: .
+-   repo: https://github.com/asottile/pyupgrade  # update python syntax
+    rev: v2.34.0
+    hooks:
+    -   id: pyupgrade
+        args: [--py36-plus]
+-   repo: local
+    hooks:
+        -   id: mypy
+            name: mypy
+            entry: invoke
+            args: ["mypy"]
+            language: system
+            pass_filenames: false
+        -   id: cover
+            name: cover
+            entry: invoke
+            args: ["coverage"]
+            language: system
+            pass_filenames: false
+        -   id: clean
+            name: clean
+            entry: invoke
+            args: ["clean"]
+            language: system
+            pass_filenames: false
