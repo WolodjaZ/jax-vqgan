@@ -70,8 +70,11 @@ def test_VectorQuantizer(JAX_PRNG, n_embed, embed_dim):
     assert params_dict is not None
 
     # Check forward pass
-    z_q, min_encoding_indices = vq.apply(params_dict, x)
+    z_q, q_loss, min_encoding_indices = vq.apply(params_dict, x)
     assert z_q is not None
+    assert q_loss is not None
+    assert q_loss.shape == ()
+    assert q_loss.dtype == dtype
     assert min_encoding_indices is not None
     assert z_q.dtype == dtype
     assert z_q.shape == x.shape[:-1] + (embed_dim,)
@@ -89,7 +92,7 @@ def test_VectorQuantizer(JAX_PRNG, n_embed, embed_dim):
     jnp.allclose(z_q_entry, z_q, atol=0.0001)
 
     # Clean up
-    del vq, params, x, z_q, min_encoding_indices
+    del vq, params, x, z_q, min_encoding_indices, q_loss
 
 
 @pytest.mark.parametrize(
@@ -124,19 +127,19 @@ def test_GumbelQuantize(JAX_PRNG, n_embed, embed_dim):
 
     # Check forward pass
     rng, gumble_apply_rng = jax.random.split(rng)
-    z_q, min_encoding_indices, logits = vq.apply(
+    z_q, q_loss, min_encoding_indices = vq.apply(
         {"params": params}, x, rngs={"gumbel": gumble_apply_rng}
     )
     assert z_q is not None
     assert min_encoding_indices is not None
-    assert logits is not None
+    assert q_loss is not None
+    assert q_loss.shape == ()
+    assert q_loss.dtype == dtype
     assert z_q.dtype == dtype
     assert z_q.shape == x.shape[:-1] + (embed_dim,)
     assert min_encoding_indices.shape == (1, hw_ch * hw_ch)
     assert jnp.min(min_encoding_indices) >= 0
     assert jnp.max(min_encoding_indices) <= n_embed - 1
-    assert logits.shape == (1, hw_ch, hw_ch, n_embed)
-    assert logits.dtype == dtype
 
     # Check get codebook
     print(params)
@@ -148,7 +151,7 @@ def test_GumbelQuantize(JAX_PRNG, n_embed, embed_dim):
     jnp.allclose(z_q_entry, z_q, atol=0.0001)
 
     # Clean up
-    del vq, params, x, z_q, z_q_entry, min_encoding_indices
+    del vq, params, x, z_q, z_q_entry, min_encoding_indices, q_loss
 
 
 @pytest.mark.parametrize(
@@ -192,7 +195,7 @@ def test_VQModule(JAX_PRNG, act_name, hw_ch, batch_size, use_gumbel):
 
     # Check forward pass
     rng, gumble_apply_rng, dropout_apply_rng = jax.random.split(rng, num=3)
-    x_recon, z_q, min_encoding_indices, logits = vqmodule.apply(
+    x_recon, z_q, q_loss, min_encoding_indices = vqmodule.apply(
         {"params": params},
         x,
         rngs={"gumbel": gumble_apply_rng, "dropout": dropout_apply_rng},
@@ -200,8 +203,7 @@ def test_VQModule(JAX_PRNG, act_name, hw_ch, batch_size, use_gumbel):
     )
     assert z_q is not None
     assert min_encoding_indices is not None
-    if use_gumbel:
-        assert logits is not None
+    assert q_loss is not None
     assert z_q.dtype == dtype
     x_recon.dtype == dtype
     assert x_recon.shape == x.shape
@@ -215,7 +217,7 @@ def test_VQModule(JAX_PRNG, act_name, hw_ch, batch_size, use_gumbel):
     jnp.allclose(x_recon_code, x_recon, atol=0.0001)
 
     # Clean up
-    del vqmodule, params, x, x_recon, z_q, min_encoding_indices, logits, x_recon_code
+    del vqmodule, params, x, x_recon, z_q, min_encoding_indices, q_loss, x_recon_code
 
 
 @pytest.mark.parametrize(
@@ -246,7 +248,7 @@ def test_VQModel(JAX_PRNG, hw_ch, batch_size, use_gumbel):
 
     # Check forward pass
     rng, gumble_apply_rng, dropout_apply_rng = jax.random.split(rng, num=3)
-    x_recon, z_q, indices, logits = vqmodel(
+    x_recon, z_q, q_loss, indices = vqmodel(
         x,
         dropout_rng=dropout_apply_rng,
         gumble_rng=gumble_apply_rng,
@@ -254,14 +256,13 @@ def test_VQModel(JAX_PRNG, hw_ch, batch_size, use_gumbel):
     )
     assert z_q is not None
     assert indices is not None
-    if use_gumbel:
-        assert logits is not None
+    assert q_loss is not None
     assert z_q.dtype == dtype
     x_recon.dtype == dtype
     assert x_recon.shape == x.shape
 
     # check encode
-    z_q_encoder, indices_encode, logits_encode = vqmodel.encode(
+    z_q_encoder, q_loss_encode, indices_encode = vqmodel.encode(
         x,
         dropout_rng=dropout_apply_rng,
         gumble_rng=gumble_apply_rng,
@@ -270,7 +271,7 @@ def test_VQModel(JAX_PRNG, hw_ch, batch_size, use_gumbel):
     assert jnp.allclose(z_q, z_q_encoder, atol=0.0001)
     assert jnp.allclose(indices, indices_encode, atol=0.0001)
     if use_gumbel:
-        assert jnp.allclose(logits, logits_encode, atol=0.0001)
+        assert jnp.allclose(q_loss, q_loss_encode, atol=0.0001)
 
     # check decode
     x_recon_decode = vqmodel.decode(
@@ -285,7 +286,122 @@ def test_VQModel(JAX_PRNG, hw_ch, batch_size, use_gumbel):
     x_recon_decode_code = vqmodel.decode_code(indices, z_shape=z_q.shape)  # noqa: F841
     # assert jnp.allclose(x_recon_decode_code, x_recon, atol=0.0001) TODO: fix this
 
+    # Clean up
+    del (
+        vqmodel,
+        x_recon,
+        z_q,
+        q_loss,
+        indices,
+        z_q_encoder,
+        q_loss_encode,
+    )
+    del indices_encode, x_recon_decode, x_recon_decode_code
+
 
 def test_VQModel_with_configs(JAX_PRNG):
     "Test that VQModel works with used configs"
     pass
+
+
+@pytest.mark.parametrize(
+    "hw_ch, batch_size, ndf, n_layers",
+    [
+        (128, 1, 64, 2),
+        (128, 2, 64, 2),
+        (256, 1, 64, 2),
+        (256, 1, 128, 2),
+        (128, 1, 64, 3),
+    ],
+)
+def test_NLayerDiscriminator(JAX_PRNG, hw_ch, batch_size, ndf, n_layers):
+    "Test that NLayerDiscriminator works"
+    config_disc = config.DiscConfig(resolution=hw_ch, ndf=ndf, n_layers=n_layers)
+    input_shape = (batch_size, hw_ch, hw_ch, config_disc.input_last_dim)
+    rng, dtype = JAX_PRNG
+
+    # Check initialization
+    discriminator = vqgan.NLayerDiscriminator(
+        ndf=config_disc.ndf,
+        n_layers=config_disc.n_layers,
+        output_dim=config_disc.output_last_dim,
+        dtype=dtype,
+    )
+    assert discriminator is not None
+    assert discriminator.dtype is dtype
+
+    # Create a dummy input
+    rng, init_rng = jax.random.split(rng)
+    x = jnp.ones(input_shape, dtype=dtype)  # [BxHxWxC]
+
+    # Check initialization
+    variables = discriminator.init(init_rng, x, train=False)
+    assert variables["params"] is not None
+    assert variables["batch_stats"] is not None
+
+    # Check forward pass
+    y, new_model_state = discriminator.apply(
+        {"params": variables["params"], "batch_stats": variables["batch_stats"]},
+        x,
+        train=True,
+        mutable=["batch_stats"],
+    )
+    assert y is not None
+    assert len(y.shape) == 4
+    y.shape[-1] == config_disc.output_last_dim
+    assert y.dtype == dtype
+    assert new_model_state["batch_stats"] is not None
+
+    # Clean up
+    del discriminator, variables, x, y
+
+
+@pytest.mark.parametrize(
+    "hw_ch, batch_size",
+    [
+        (128, 1),
+        (256, 1),
+        (128, 4),
+        (128, 1),
+    ],
+)
+def test_VQGanDiscriminator(JAX_PRNG, hw_ch, batch_size):
+    "Test that VQModel works"
+    config_vqgan = config.DiscConfig(resolution=hw_ch)
+    input_shape = (
+        batch_size,
+        config_vqgan.resolution,
+        config_vqgan.resolution,
+        config_vqgan.input_last_dim,
+    )
+    rng, dtype = JAX_PRNG
+
+    # Check initialization
+    vqdisc = vqgan.VQGanDiscriminator(
+        config=config_vqgan, input_shape=input_shape, seed=42, dtype=dtype
+    )
+    assert vqdisc is not None
+    assert vqdisc.params is not None
+
+    # Create a dummy input
+    x = jnp.ones(input_shape, dtype=dtype)  # [BxHxWx3]
+
+    # Check forward pass
+    checK_list = [
+        (None, None),
+        (None, vqdisc.params["batch_stats"]),
+        (vqdisc.params["params"], None),
+        (vqdisc.params["params"], vqdisc.params["batch_stats"]),
+    ]
+    new_model_state = None
+    for params, batch_stats in checK_list:
+        y, new_model_state = vqdisc(
+            x, params=params, batch_stats=batch_stats, train=True
+        )
+        assert y is not None
+        assert len(y.shape) == 4
+        y.shape[-1] == config_vqgan.output_last_dim
+        assert y.dtype == dtype
+        assert new_model_state["batch_stats"] is not None
+    # Clean up
+    del vqdisc, x, y, new_model_state

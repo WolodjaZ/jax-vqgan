@@ -9,7 +9,7 @@ from flax.traverse_util import flatten_dict, unflatten_dict
 from transformers import PretrainedConfig
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
 
-from modules.config import VQGANConfig
+from modules.config import DiscConfig, VQGANConfig
 from modules.models import Decoder, Encoder
 
 
@@ -49,6 +49,7 @@ class VectorQuantizer(nn.Module):
     Config Attributes:
         n_embed (int) : number of embeddings.
         emb_dim (int): dimension of embedding.
+        beta (float): weight of commitment loss.
     """
 
     config: VQGANConfig
@@ -65,7 +66,7 @@ class VectorQuantizer(nn.Module):
             dtype=self.dtype,
         )
 
-    def __call__(self, z: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def __call__(self, z: jnp.ndarray) -> Tuple[jnp.ndarray, float, jnp.ndarray]:
         # flatten z
         z_flatten = z.reshape(-1, self.config.embed_dim)
 
@@ -87,9 +88,13 @@ class VectorQuantizer(nn.Module):
         # reshape to (batch, num_tokens)
         min_encoding_indices = min_encoding_indices.reshape(z.shape[0], -1)
 
-        # compute the codebook_loss (q_loss) outside the model
+        # compute the codebook_loss (q_loss)
+        q_loss = self.config.beta * jnp.mean(
+            (jax.lax.stop_gradient(z_q) - z) ** 2
+        ) + jnp.mean((z_q - jax.lax.stop_gradient(z)) ** 2)
+
         # here we return the embeddings and indices
-        return z_q, min_encoding_indices
+        return z_q, q_loss, min_encoding_indices
 
     @staticmethod
     def get_codebook_entry(
@@ -132,6 +137,7 @@ class GumbelQuantize(nn.Module):
     Config Attributes:
         n_embed (int) : number of embeddings.
         emb_dim (int): dimension of embedding.
+        kl_weight (float): weight of kl loss.
     """
 
     config: VQGANConfig
@@ -157,7 +163,7 @@ class GumbelQuantize(nn.Module):
             dtype=self.dtype,
         )
 
-    def __call__(self, z: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    def __call__(self, z: jnp.ndarray) -> Tuple[jnp.ndarray, float, jnp.ndarray]:
         # project z to get logits
         logits = self.proj(z)
 
@@ -176,9 +182,14 @@ class GumbelQuantize(nn.Module):
         # get indices [BxHxWxP] -> [BxH*W]
         indices = jnp.argmax(indicies_prob, axis=-1).reshape(z.shape[0], -1)
 
-        # compute the codebook_loss (q_loss) outside the model
+        # compute the codebook_loss (q_loss)
+        qy = nn.softmax(logits)
+        q_loss = self.config.kl_weight * jnp.mean(
+            jnp.sum(qy * jnp.log(qy * self.config.n_embed + 1e-10), axis=-1)
+        )
+
         # here we return the embeddings, indices and logits (for loss)
-        return z_q, indices, logits
+        return z_q, q_loss, indices
 
     @staticmethod
     def get_codebook_entry(
@@ -246,18 +257,16 @@ class VQModule(nn.Module):
 
     def encode(
         self, x: jnp.ndarray, deterministic: bool = True
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    ) -> Tuple[jnp.ndarray, float, jnp.ndarray]:
         # Encoder
         z = self.encoder(x, deterministic=deterministic)
         # Pre-quantizer
         z = self.pre_quantizer(z)
         # Quantizer
-        z_q, indices, logits = (
-            self.quantizer(z) if self.config.use_gumbel else self.quantizer(z) + (None,)
-        )
+        z_q, q_loss, indices = self.quantizer(z)
         # Post-quantizer
         z_q = self.post_quantizer(z_q)
-        return z_q, indices, logits
+        return z_q, q_loss, indices
 
     def decode(self, z_q: jnp.ndarray, deterministic: bool = True) -> jnp.ndarray:
         # Post-quantizer
@@ -277,10 +286,10 @@ class VQModule(nn.Module):
 
     def __call__(
         self, x: jnp.ndarray, deterministic: bool = True
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        z_q, indices, logits = self.encode(x, deterministic=deterministic)
+    ) -> Tuple[jnp.ndarray, jnp.ndarray, float, jnp.ndarray]:
+        z_q, q_loss, indices = self.encode(x, deterministic=deterministic)
         x_recon = self.decode(z_q, deterministic=deterministic)
-        return x_recon, z_q, indices, logits
+        return x_recon, z_q, q_loss, indices
 
 
 class VQGANPreTrainedModel(FlaxPreTrainedModel):
@@ -288,22 +297,16 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
     for downloading and loading pretrained models.
 
     Arguments:
-        config_class (PretrainedConfig): a class derived from PretrainedConfig
-            that defines the model's configuration.
-        base_model_prefix (str): the string associated to the base model
-            when downloading the model weights.
         module_class (nn.Module): a class derived from nn.Module
             that defines the model's core computation.
 
     """
 
-    config_class: PretrainedConfig = VQGANConfig  # TODO
-    base_model_prefix: str = "model"
     module_class: nn.Module = None
 
     def __init__(
         self,
-        config: VQGANConfig,
+        config: PretrainedConfig = VQGANConfig,
         input_shape: Tuple = (1, 256, 256, 3),
         seed: int = 0,
         dtype: jnp.dtype = jnp.float32,
@@ -349,7 +352,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         dropout_rng: Optional[jax.random.PRNGKey] = None,
         gumble_rng: Optional[jax.random.PRNGKey] = None,
         train: bool = False,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    ) -> Tuple[jnp.ndarray, float, jnp.ndarray]:
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
         rngs["gumbel"] = gumble_rng if gumble_rng is not None else {}
@@ -400,7 +403,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         dropout_rng: Optional[jax.random.PRNGKey] = None,
         gumble_rng: Optional[jax.random.PRNGKey] = None,
         train: bool = False,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    ) -> Tuple[jnp.ndarray, jnp.ndarray, float, jnp.ndarray]:
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
         rngs["gumbel"] = gumble_rng if gumble_rng is not None else {}
@@ -413,3 +416,143 @@ class VQModel(VQGANPreTrainedModel):
     """VQ-VAE model from pre-trained VQGAN."""
 
     module_class = VQModule
+
+
+class NLayerDiscriminator(nn.Module):
+    """Defines a PatchGAN discriminator as in Pix2Pix
+    See:
+        https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/models/networks.py
+
+    Arguments:
+        ndf (int): the number of filters in the last conv layer
+        n_layers (int): the number of conv layers in the discriminator
+        output_dim (bool): dim of output the last channel of the discriminator
+        dtype: the dtype of the computation (default: float32)
+    """
+
+    ndf: int
+    n_layers: int
+    output_dim: int
+    dtype: jnp.dtype = jnp.float32
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
+        # input is bx256x256x(nc) return bx30x30x1
+        x = nn.Conv(
+            self.ndf,
+            kernel_size=(4, 4),
+            strides=(2, 2),
+            padding=((1, 1), (1, 1)),
+            dtype=self.dtype,
+        )(x)
+        x = nn.leaky_relu(x, negative_slope=0.2)
+        # downsample
+        for n in range(1, self.n_layers):
+            nf_mult = min(2**n, 8)
+            x = nn.Conv(
+                self.ndf * nf_mult,
+                kernel_size=(4, 4),
+                strides=(2, 2),
+                padding=((1, 1), (1, 1)),
+                use_bias=False,
+                dtype=self.dtype,
+            )(x)
+            x = nn.BatchNorm(use_running_average=not train, dtype=self.dtype)(x)
+            x = nn.leaky_relu(x, negative_slope=0.2)
+
+        # last downsample
+        nf_mult = min(2**n, 8)
+        x = nn.Conv(
+            self.ndf * nf_mult,
+            kernel_size=(4, 4),
+            strides=(1, 1),
+            padding=((1, 1), (1, 1)),
+            use_bias=False,
+            dtype=self.dtype,
+        )(x)
+        x = nn.BatchNorm(use_running_average=not train, dtype=self.dtype)(x)
+        x = nn.leaky_relu(x, negative_slope=0.2)
+
+        # output 1 channel prediction map
+        logits = nn.Conv(
+            self.output_dim,
+            kernel_size=(4, 4),
+            strides=(1, 1),
+            padding=((1, 1), (1, 1)),
+            dtype=self.dtype,
+        )(x)
+        return logits
+
+
+class VQGanDiscriminator(FlaxPreTrainedModel):
+    """VQGAN discriminator model."""
+
+    def __init__(
+        self,
+        config: DiscConfig,
+        input_shape: Tuple = (1, 256, 256, 3),
+        seed: int = 0,
+        dtype: jnp.dtype = jnp.float32,
+        _do_init: bool = True,
+        **kwargs,
+    ):
+        self._missing_keys: Set[str] = set()
+        module = NLayerDiscriminator(
+            ndf=config.ndf,
+            n_layers=config.n_layers,
+            output_dim=config.output_last_dim,
+            dtype=dtype,
+            **kwargs,
+        )
+        super().__init__(
+            config,
+            module,
+            input_shape=input_shape,
+            seed=seed,
+            dtype=dtype,
+            _do_init=_do_init,
+        )
+
+    def init_weights(
+        self,
+        params_rng: jax.random.PRNGKey,
+        input_shape: Tuple,
+        params: FrozenDict = None,
+    ) -> FrozenDict:
+        # initialize model
+        input_x = jnp.zeros(input_shape, dtype=self.dtype)
+        random_params = self.module.init(params_rng, input_x, True)
+
+        # If params provided find unitialized params and replace with provided params
+        if params is not None:
+            random_params = flatten_dict(unfreeze(random_params))
+            params = flatten_dict(unfreeze(params))
+            for missing_key in self._missing_keys:
+                params[missing_key] = random_params[missing_key]
+            self._missing_keys = set()
+            return freeze(unflatten_dict(params))
+        else:
+            return random_params
+
+    def __call__(
+        self,
+        input: jnp.ndarray,
+        params: Optional[FrozenDict] = None,
+        batch_stats: Optional[FrozenDict] = None,
+        train: bool = False,
+    ) -> Tuple[jnp.ndarray, jnp.ndarray, float, jnp.ndarray]:
+        # Handle any PRNG if needed
+        if batch_stats is not None and params is not None:
+            dict_params = {"params": params, "batch_stats": batch_stats}
+        elif batch_stats is not None:
+            dict_params = {"params": self.params["params"], "batch_stats": batch_stats}
+        elif params is not None:
+            dict_params = {"params": params, "batch_stats": self.params["batch_stats"]}
+        else:
+            dict_params = {
+                "params": self.params["params"],
+                "batch_stats": self.params["batch_stats"],
+            }
+        return self.module.apply(
+            dict_params, input, train=train, mutable=["batch_stats"] if train else False
+        )

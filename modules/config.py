@@ -1,4 +1,5 @@
-from typing import Tuple
+from dataclasses import dataclass
+from typing import Any, Tuple
 
 from transformers import PretrainedConfig
 
@@ -44,6 +45,8 @@ class VQGANConfig(PretrainedConfig):
         resamp_with_conv: bool = True,
         use_gumbel: bool = False,
         gumb_temp: float = 1.0,
+        beta: float = 0.25,
+        kl_weight: float = 5e-4,
         act_name: str = "swish",
         give_pre_end: bool = False,
         **kwargs,
@@ -64,6 +67,60 @@ class VQGANConfig(PretrainedConfig):
         self.resamp_with_conv = resamp_with_conv
         self.use_gumbel = use_gumbel
         self.gumb_temp = gumb_temp
+        self.beta = beta
+        self.kl_weight = kl_weight
         self.act_name = act_name
         self.give_pre_end = give_pre_end
         self.num_resolutions = len(ch_mult)
+
+
+class DiscConfig(PretrainedConfig):
+    """Configuration class to store the configuration of a Discriminator model.
+
+    Args:
+        PretrainedConfig (_type_): _description_
+    """
+
+    def __init__(
+        self,
+        input_last_dim: int = 3,
+        output_last_dim: int = 1,
+        resolution: int = 256,
+        ndf: int = 64,
+        n_layers: int = 3,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.input_last_dim = input_last_dim
+        self.output_last_dim = output_last_dim
+        self.resolution = resolution
+        self.ndf = ndf
+        self.n_layers = n_layers
+
+
+@dataclass
+class TrainConfig:
+    """Configuration class to store the configuration of a train model.
+
+    Arguments:
+
+    """
+
+    model_name: str
+    model_hparams: VQGANConfig
+    disc_hparams: DiscConfig
+    save_dir: str
+    log_dir: str
+    check_val_every_n_epoch: int
+    input_shape: Tuple[int, int, int]
+    train_batch_size: int
+    test_batch_size: int
+    codebook_weight: float
+    monitor: str
+    disc_weight: float
+    num_epochs: int
+    dtype: str
+    distributed: bool
+    seed: int
+    optimizer: Any
+    optimizer_disc: Any
