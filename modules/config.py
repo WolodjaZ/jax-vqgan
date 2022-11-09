@@ -124,3 +124,5 @@ class TrainConfig:
     seed: int
     optimizer: Any
     optimizer_disc: Any
+    disc_start: int
+    temp_scheduler: Any

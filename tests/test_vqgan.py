@@ -216,6 +216,18 @@ def test_VQModule(JAX_PRNG, act_name, hw_ch, batch_size, use_gumbel):
     assert x_recon_code.shape == x_recon.shape
     jnp.allclose(x_recon_code, x_recon, atol=0.0001)
 
+    # Check temperature scaling
+    temp = 0.5
+    temp_new = vqmodule.apply(
+        {"params": params}, temp, method=vqmodule.update_temperature
+    )
+    assert temp_new == temp
+    temp = 0.2
+    temp_new = vqmodule.apply(
+        {"params": params}, temp, method=vqmodule.update_temperature
+    )
+    assert temp_new == temp
+
     # Clean up
     del vqmodule, params, x, x_recon, z_q, min_encoding_indices, q_loss, x_recon_code
 
@@ -286,6 +298,12 @@ def test_VQModel(JAX_PRNG, hw_ch, batch_size, use_gumbel):
     x_recon_decode_code = vqmodel.decode_code(indices, z_shape=z_q.shape)  # noqa: F841
     # assert jnp.allclose(x_recon_decode_code, x_recon, atol=0.0001) TODO: fix this
 
+    # Check temperature scaling
+    temp = 0.5
+    assert vqmodel.update_temperature(temp) == temp
+    temp = 0.2
+    assert vqmodel.update_temperature(temp) == temp
+
     # Clean up
     del (
         vqmodel,
@@ -295,8 +313,10 @@ def test_VQModel(JAX_PRNG, hw_ch, batch_size, use_gumbel):
         indices,
         z_q_encoder,
         q_loss_encode,
+        indices_encode,
+        x_recon_decode,
+        x_recon_decode_code,
     )
-    del indices_encode, x_recon_decode, x_recon_decode_code
 
 
 def test_VQModel_with_configs(JAX_PRNG):

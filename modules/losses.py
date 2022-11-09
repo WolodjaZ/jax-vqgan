@@ -17,6 +17,10 @@ def reconstruction_loss(
         return (predictions - targets) ** 2
     elif type == "l1":
         return jnp.abs(predictions - targets)
+    elif type == "combo":  # TODO optimize this
+        l1 = predictions - targets
+        l2 = (predictions - targets) ** 2
+        return jnp.where(l2 < 0.5, l1, l2)
     else:
         raise ValueError(f"Unknown loss type: {type}")
 

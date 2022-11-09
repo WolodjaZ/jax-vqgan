@@ -227,6 +227,7 @@ class VQModule(nn.Module):
     dtype: jnp.dtype = jnp.float32
 
     def setup(self):
+        """Setup the VQ-VAE module."""
         # Set activation function
         self.config.act_fn: Callable = ACTFUN[self.config.act_name]
         # Encoder
@@ -258,6 +259,12 @@ class VQModule(nn.Module):
     def encode(
         self, x: jnp.ndarray, deterministic: bool = True
     ) -> Tuple[jnp.ndarray, float, jnp.ndarray]:
+        """Encode the input.
+        Args:
+            x (jnp.ndarray): the input to the encoder.
+        Returns:
+            Tuple[jnp.ndarray, float, jnp.ndarray]: the encoded input, the loss and the indices.
+        """
         # Encoder
         z = self.encoder(x, deterministic=deterministic)
         # Pre-quantizer
@@ -269,6 +276,15 @@ class VQModule(nn.Module):
         return z_q, q_loss, indices
 
     def decode(self, z_q: jnp.ndarray, deterministic: bool = True) -> jnp.ndarray:
+        """Decode the quantized latent vector.
+
+        Args:
+            z_q (jnp.ndarray): the quantized latent vector.
+            deterministic (bool, optional): for Dropout. Defaults to True.
+
+        Returns:
+            jnp.ndarray: the reconstructed image.
+        """
         # Post-quantizer
         z_q = self.post_quantizer(z_q)
         # Decoder
@@ -283,6 +299,17 @@ class VQModule(nn.Module):
         )
         x = self.decode(z_q, deterministic=True)
         return x
+
+    def update_temperature(self, temperature: float) -> float:
+        """Update the temperature of the Gumbel-Softmax distribution.
+
+        Args:
+            temperature (float): the new temperature of the Gumbel-Softmax distribution
+        Returns:
+            float: the new temperature of the Gumbel-Softmax distribution
+        """
+        self.quantizer.config.gumb_temp = temperature
+        return self.quantizer.config.gumb_temp
 
     def __call__(
         self, x: jnp.ndarray, deterministic: bool = True
@@ -313,6 +340,16 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         _do_init: bool = True,
         **kwargs,
     ):
+        """Initialize the model.
+
+        Args:
+            config (PretrainedConfig, optional): the config of the model. Defaults to VQGANConfig.
+            input_shape (Tuple, optional): the input shape of the model.
+                Defaults to (1, 256, 256, 3).
+            seed (int, optional): the seed of the model. Defaults to 0.
+            dtype (jnp.dtype, optional): the dtype of the computation. Defaults to jnp.float32.
+            _do_init (bool, optional): whether to initialize the model. Defaults to True.
+        """
         self._missing_keys: Set[str] = set()
         module = self.module_class(config=config, dtype=dtype, **kwargs)
         super().__init__(
@@ -327,6 +364,16 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
     def init_weights(
         self, rng: jax.random.PRNGKey, input_shape: Tuple, params: FrozenDict = None
     ) -> FrozenDict:
+        """Initialize the weights of the model. Get the params
+
+        Args:
+            rng (jax.random.PRNGKey): the random number generator.
+            input_shape (Tuple): the input shape of the model.
+            params (FrozenDict, optional): the params of the model. Defaults to None.
+
+        Returns:
+            FrozenDict: initialized params of the model.
+        """
         # initialize model
         input_x = jnp.zeros(input_shape, dtype=self.dtype)
         params_rng, dropout_rng, gumble_rng = jax.random.split(rng, num=3)
@@ -353,6 +400,14 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         gumble_rng: Optional[jax.random.PRNGKey] = None,
         train: bool = False,
     ) -> Tuple[jnp.ndarray, float, jnp.ndarray]:
+        """Encode the input.
+        Args:
+            input (jnp.ndarray): the input to the encoder.
+            params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
+            dropout_rng (Optional[jax.random.PRNGKey], optional): the dropout rng. Defaults to None.
+            gumble_rng (Optional[jax.random.PRNGKey], optional): the gumbel rng. Defaults to None.
+            train (bool, optional): Training or inference mode. Defaults to False.
+        """
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
         rngs["gumbel"] = gumble_rng if gumble_rng is not None else {}
@@ -372,6 +427,18 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         gumble_rng: Optional[jax.random.PRNGKey] = None,
         train: bool = False,
     ) -> jnp.ndarray:
+        """Decode the latent vector.
+
+        Args:
+            z (jnp.ndarray): the latent vector.
+            params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
+            dropout_rng (Optional[jax.random.PRNGKey], optional): the dropout rng. Defaults to None.
+            gumble_rng (Optional[jax.random.PRNGKey], optional): the gumbel rng. Defaults to None.
+            train (bool, optional): Training or inference mode. Defaults to False.
+
+        Returns:
+            jnp.ndarray: the decoded image.
+        """
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
         rngs["gumbel"] = gumble_rng if gumble_rng is not None else {}
@@ -389,12 +456,39 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         z_shape: Tuple[int, ...],
         params: Optional[FrozenDict] = None,
     ) -> jnp.ndarray:
+        """Decode the indices.
+
+        Args:
+            indices (jnp.ndarray): the indices.
+            z_shape (Tuple[int, ...]): the shape of the latent vector.
+            params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
+
+        Returns:
+            jnp.ndarray: the decoded image from indices.
+        """
         return self.module.apply(
             {"params": params or self.params},
             indices,
             z_shape,
             method=self.module.decode_code,
         )
+
+    def update_temperature(
+        self, temperature: float, params: Optional[FrozenDict] = None
+    ) -> float:
+        """Update the temperature of the model.
+        Args:
+            temperature (float): the temperature to update to.
+            params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
+        Returns:
+            float: the updated temperature.
+        """
+        new_temperature = self.module.apply(
+            {"params": params or self.params},
+            temperature,
+            method=self.module.update_temperature,
+        )
+        return new_temperature
 
     def __call__(
         self,
@@ -404,6 +498,22 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         gumble_rng: Optional[jax.random.PRNGKey] = None,
         train: bool = False,
     ) -> Tuple[jnp.ndarray, jnp.ndarray, float, jnp.ndarray]:
+        """Encode and decode the input.
+
+        Args:
+            input (jnp.ndarray): the input to the encoder.
+            params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
+            dropout_rng (Optional[jax.random.PRNGKey], optional): the dropout rng. Defaults to None.
+            gumble_rng (Optional[jax.random.PRNGKey], optional): the gumbel rng. Defaults to None.
+            train (bool, optional): Training or inference mode. Defaults to False.
+
+        Returns:
+            Tuple[jnp.ndarray, jnp.ndarray, float, jnp.ndarray]:
+                the encoded latent vector,
+                the decoded image,
+                the log prob of the latent vector,
+                the indices of the latent vector.
+        """
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
         rngs["gumbel"] = gumble_rng if gumble_rng is not None else {}
