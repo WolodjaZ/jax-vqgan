@@ -13,6 +13,7 @@ def help(c):
     print("  - test: Test project.")
     print("  - test_extended: Test project with extended version.")
     print("  - coverage: Coverage analysis.")
+    print("  - style: Lint with flake8.")
     print("  - mypy: Typing analysis.")
     print("  - docs: Build documentation.")
 

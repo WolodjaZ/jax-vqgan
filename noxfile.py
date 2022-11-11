@@ -14,7 +14,7 @@ def _install_dev_packages(session):
 
 
 def _install_test_dependencies(session):
-    session.install("pytest==7.2.0", "pytest-cov==4.0.0", "mypy==0.982")
+    session.install("pytest==7.2.0", "pytest-cov==4.0.0")
 
 
 def _install_doc_dependencies(session):
@@ -66,9 +66,27 @@ def coverage(session: nox.Session) -> None:
 def mypy(session: nox.Session) -> None:
     """Type check."""
     _deps(session)
-    _install_test_dependencies(session)
+    session.install("mypy==0.982")
     """Run mypy."""
     session.run("mypy", "--ignore-missing-imports", "modules", "tests")
+
+
+nox.session(python=SUPPORTED_PY_VERSIONS)
+
+
+def lint(session: nox.Session) -> None:
+    """Lint install."""
+    _deps(session)
+    session.install("flake8==5.0.4")
+    """Run mypy."""
+    session.run(
+        "flake8",
+        "--count",
+        "--select=F",
+        "--show-source",
+        "--statistics",
+        "--max-line-length=100",
+    )
 
 
 @nox.session(python=SUPPORTED_PY_VERSIONS)
