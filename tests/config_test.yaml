@@ -13,7 +13,7 @@ input_shape:
 train_batch_size: 2
 test_batch_size: 2
 codebook_weight: 1.0
-monitor: val/total_loss
+monitor: total_loss
 disc_weight: 0.8
 num_epochs: 2
 dtype: 'float32'

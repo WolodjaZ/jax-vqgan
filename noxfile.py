@@ -1,7 +1,7 @@
 import nox
 
 SUPPORTED_PY_VERSIONS = ["3.8", "3.9", "3.10"]
-nox.options.sessions = ["test", "coverage", "mypy", "docs"]
+nox.options.sessions = ["test", "test_extended", "coverage", "mypy", "docs"]
 
 
 def _deps(session: nox.Session) -> None:
@@ -28,6 +28,16 @@ def test(session: nox.Session) -> None:
     _install_dev_packages(session)
     _install_test_dependencies(session)
 
+    session.run("pytest", "-m", "not training_long", "tests")
+
+
+@nox.session(python=SUPPORTED_PY_VERSIONS)
+def test_extended(session: nox.Session) -> None:
+    """Pytesting. Extended version."""
+    _deps(session)
+    _install_dev_packages(session)
+    _install_test_dependencies(session)
+
     session.run("pytest", "tests")
 
 
@@ -38,7 +48,16 @@ def coverage(session: nox.Session) -> None:
     _install_dev_packages(session)
     _install_test_dependencies(session)
     session.run("coverage", "erase")
-    session.run("coverage", "run", "--append", "-m", "pytest", "tests")
+    session.run(
+        "coverage",
+        "run",
+        "--append",
+        "-m",
+        "pytest",
+        "-m",
+        "not training_long",
+        "tests",
+    )
     session.run("coverage", "report", "--fail-under=1")  # 100
     session.run("coverage", "erase")
 

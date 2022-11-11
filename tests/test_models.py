@@ -205,7 +205,7 @@ def test_UpsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use):
         num_res_blocks=1,
         ch=32,
     )
-    config_vqgan.act_fn = nn.swish
+    act_fn = nn.swish
     temb_use = False
     if curr_res == 0:
         curr_res = 16
@@ -217,7 +217,7 @@ def test_UpsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use):
     for block_idx in range(len(ch_mult)):
         # Check instantiation
         upsampleblock = models.UpsamplingBlock(
-            config_vqgan, curr_res, block_idx, dtype=dtype
+            config_vqgan, curr_res, block_idx, act_fn=act_fn, dtype=dtype
         )
         assert upsampleblock is not None
         assert upsampleblock.dtype == dtype
@@ -284,7 +284,7 @@ def test_fail_UpsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use, ch):
         num_res_blocks=1,
         ch=ch,
     )
-    config_vqgan.act_fn = nn.swish
+    act_fn = nn.swish
     if curr_res == 0:
         curr_res = 16
     hw_ch = 16
@@ -295,7 +295,7 @@ def test_fail_UpsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use, ch):
     for block_idx in range(len(ch_mult)):
         # Check instantiation
         upsampleblock = models.UpsamplingBlock(
-            config_vqgan, curr_res, block_idx, dtype=dtype
+            config_vqgan, curr_res, block_idx, act_fn=act_fn, dtype=dtype
         )
         assert upsampleblock is not None
         assert upsampleblock.dtype == dtype
@@ -357,7 +357,7 @@ def test_DownsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use):
         num_res_blocks=1,
         ch=32,
     )
-    config_vqgan.act_fn = nn.swish
+    act_fn = nn.swish
     temb_use = False
     if curr_res == 0:
         curr_res = 16
@@ -370,7 +370,7 @@ def test_DownsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use):
     for block_idx in range(len(ch_mult)):
         # Check instantiation
         downsampleblock = models.DownsamplingBlock(
-            config_vqgan, curr_res, block_idx, dtype=dtype
+            config_vqgan, curr_res, block_idx, act_fn=act_fn, dtype=dtype
         )
         assert downsampleblock is not None
         assert downsampleblock.dtype == dtype
@@ -439,7 +439,7 @@ def test_fail_DownsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use, ch):
         num_res_blocks=1,
         ch=ch,
     )
-    config_vqgan.act_fn = nn.swish
+    act_fn = nn.swish
     if curr_res == 0:
         curr_res = 16
     hw_ch = 16
@@ -450,7 +450,7 @@ def test_fail_DownsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use, ch):
     for block_idx in range(len(ch_mult)):
         # Check instantiation
         upsampleblock = models.DownsamplingBlock(
-            config_vqgan, curr_res, block_idx, dtype=dtype
+            config_vqgan, curr_res, block_idx, act_fn=act_fn, dtype=dtype
         )
         assert upsampleblock is not None
         assert upsampleblock.dtype == dtype
@@ -573,13 +573,13 @@ def test_Encoder(JAX_PRNG, ch, ch_mult, z_channels, double_z):
         double_z=double_z,
         z_channels=z_channels,
     )
-    config_vqgan.act_fn = nn.swish
+    act_fn = nn.swish
     hw_ch = len(ch_mult) * 2
     out_channels = z_channels * 2 if double_z else z_channels
     rng, dtype = JAX_PRNG
 
     # Check instantiation
-    encoder = models.Encoder(config_vqgan, dtype=dtype)
+    encoder = models.Encoder(config_vqgan, act_fn=act_fn, dtype=dtype)
     assert encoder is not None
     assert encoder.dtype == dtype
 
@@ -617,13 +617,13 @@ def test_Encoder_with_configs(JAX_PRNG):
 
 
 #    config_vqgan = None # Load config
-#    config_vqgan.act_fn = nn.swish
+#    act_fn = nn.swish
 #    hw_ch = config_vqgan.num_resolutions*2
 #    out_channels = config_vqgan.z_channels*2 if config_vqgan.double_z else config_vqgan.z_channels
 #    rng, dtype = JAX_PRNG
 #
 #    # Check instantiation
-#    encoder = models.Encoder(config_vqgan, dtype=dtype)
+#    encoder = models.Encoder(config_vqgan, act_fn=act_fn, dtype=dtype)
 #    assert encoder is not None
 #    assert encoder.dtype == dtype
 #
@@ -674,12 +674,12 @@ def test_Decoder(JAX_PRNG, ch, ch_mult, z_channels, out_ch):
         out_ch=out_ch,
         z_channels=z_channels,
     )
-    config_vqgan.act_fn = nn.swish
+    act_fn = nn.swish
     hw_ch = 1
     rng, dtype = JAX_PRNG
 
     # Check instantiation
-    decoder = models.Decoder(config_vqgan, dtype=dtype)
+    decoder = models.Decoder(config_vqgan, act_fn=act_fn, dtype=dtype)
     assert decoder is not None
     assert decoder.dtype == dtype
 
@@ -717,12 +717,12 @@ def test_Decoder_with_configs(JAX_PRNG):
 
 
 #    config_vqgan = None # Load config
-#    config_vqgan.act_fn = nn.swish
+#    act_fn = nn.swish
 #    hw_ch = 1
 #    rng, dtype = JAX_PRNG
 #
 #    # Check instantiation
-#    decoder = models.Decoder(config_vqgan, dtype=dtype)
+#    decoder = models.Decoder(config_vqgan, act_fn=act_fn, dtype=dtype)
 #    assert decoder is not None
 #    assert decoder.dtype == dtype
 #

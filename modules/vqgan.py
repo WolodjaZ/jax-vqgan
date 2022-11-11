@@ -229,9 +229,9 @@ class VQModule(nn.Module):
     def setup(self):
         """Setup the VQ-VAE module."""
         # Set activation function
-        self.config.act_fn: Callable = ACTFUN[self.config.act_name]
+        act_fn: Callable = ACTFUN[self.config.act_name]
         # Encoder
-        self.encoder = Encoder(self.config, dtype=self.dtype)
+        self.encoder = Encoder(self.config, act_fn=act_fn, dtype=self.dtype)
         # Map last channel of encoder to embedding dim for VQ
         self.pre_quantizer = nn.Conv(
             self.config.embed_dim,
@@ -254,7 +254,7 @@ class VQModule(nn.Module):
             dtype=self.dtype,
         )
         # Decoder
-        self.decoder = Decoder(self.config, dtype=self.dtype)
+        self.decoder = Decoder(self.config, act_fn=act_fn, dtype=self.dtype)
 
     def encode(
         self, x: jnp.ndarray, deterministic: bool = True
@@ -326,14 +326,16 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
     Arguments:
         module_class (nn.Module): a class derived from nn.Module
             that defines the model's core computation.
+        config_class (PretrainedConfig): a class derived from PretrainedConfig
 
     """
 
     module_class: nn.Module = None
+    config_class: PretrainedConfig = None
 
     def __init__(
         self,
-        config: PretrainedConfig = VQGANConfig,
+        config: PretrainedConfig = VQGANConfig(),
         input_shape: Tuple = (1, 256, 256, 3),
         seed: int = 0,
         dtype: jnp.dtype = jnp.float32,
@@ -351,6 +353,10 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
             _do_init (bool, optional): whether to initialize the model. Defaults to True.
         """
         self._missing_keys: Set[str] = set()
+        assert isinstance(
+            config, self.config_class
+        ), f"""config: {config} has to be an instance
+                                                            of {self.config_class}"""
         module = self.module_class(config=config, dtype=dtype, **kwargs)
         self.seed = seed
         self.dtype = dtype
@@ -535,6 +541,7 @@ class VQModel(VQGANPreTrainedModel):
     """VQ-VAE model from pre-trained VQGAN."""
 
     module_class = VQModule
+    config_class = VQGANConfig
 
 
 class NLayerDiscriminator(nn.Module):
@@ -604,11 +611,20 @@ class NLayerDiscriminator(nn.Module):
 
 
 class VQGanDiscriminator(FlaxPreTrainedModel):
-    """VQGAN discriminator model."""
+    """VQGAN discriminator model.
+
+    Arguments:
+        module_class (nn.Module): the discriminator module class (NLayerDiscriminator).
+        config_class (PretrainedConfig): configuration class to store the configuration of
+            the model: (DiscConfig)
+    """
+
+    module_class: nn.Module = NLayerDiscriminator
+    config_class: PretrainedConfig = DiscConfig
 
     def __init__(
         self,
-        config: DiscConfig,
+        config: DiscConfig = DiscConfig(),
         input_shape: Tuple = (1, 256, 256, 3),
         seed: int = 0,
         dtype: jnp.dtype = jnp.float32,
@@ -616,7 +632,7 @@ class VQGanDiscriminator(FlaxPreTrainedModel):
         **kwargs,
     ):
         self._missing_keys: Set[str] = set()
-        module = NLayerDiscriminator(
+        module = self.module_class(
             ndf=config.ndf,
             n_layers=config.n_layers,
             output_dim=config.output_last_dim,

@@ -64,6 +64,7 @@ def test_DummyDataLoader(JAX_PRNG, batch_size, batches):
 
 
 def test_VQGanImageProcessor():
+    """Test the VQGanImageProcessor."""
     imageprocesser = utils.VQGanImageProcessor()
     assert imageprocesser is not None
 
@@ -88,6 +89,7 @@ def test_resize_VQGanImageProcessor():
     [2.0, 1.0, 0.5],
 )
 def test_rescale_VQGanImageProcessor(rescale):
+    """Test the rescale function."""
     extractor = utils.VQGanImageProcessor()
     input = np.ones((224, 224, 3))
     input_resized = extractor.rescale(input, rescale)
@@ -98,6 +100,7 @@ def test_rescale_VQGanImageProcessor(rescale):
 
 
 def test_normalize_VQGanImageProcessor():
+    """Test the normalize function."""
     extractor = utils.VQGanImageProcessor()
     input = (jax.random.normal(jax.random.PRNGKey(0), (224, 224, 3)) + 1) / 2 * 255
     input = jax.lax.clamp(0.0, input, 255.0)
@@ -131,6 +134,8 @@ def test_normalize_VQGanImageProcessor():
     ],
 )
 def test_preprocess(pil_img, list_of_images, reverted_channels):
+    """Test the preprocess function."""
+
     def create_img(rng: jax.random.PRNGKey, reverted: bool) -> np.ndarray:
         image = jax.random.normal(rng, (224, 224, 3))
         if reverted:
@@ -211,6 +216,7 @@ def test_preprocess(pil_img, list_of_images, reverted_channels):
     ],
 )
 def test_VQGanFeatureExtractor(pil_img, list_of_images, reverted_channels):
+    """Test the VQGanFeatureExtractor."""
     splits = 4
     rng = jax.random.PRNGKey(0)
     if list_of_images:
@@ -242,6 +248,7 @@ def test_VQGanFeatureExtractor(pil_img, list_of_images, reverted_channels):
     ],
 )
 def test_pipeline(pil_img, list_of_images, reverted_channels):
+    """Test the pipeline. Extracting features and then reconstructing the image."""
     splits = 4
     rng = jax.random.PRNGKey(0)
     if list_of_images:
@@ -290,6 +297,8 @@ def test_pipeline(pil_img, list_of_images, reverted_channels):
     [448, 256, 224, 128],
 )
 def test_pipeline_sizes(size_img):
+    """Test the pipeline. Extracting features and then reconstructing the image.
+    With different image sizes."""
     splits = 2
     rng = jax.random.PRNGKey(0)
     rngs = jax.random.split(rng, splits)
