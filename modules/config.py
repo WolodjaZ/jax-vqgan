@@ -1,6 +1,10 @@
 from dataclasses import dataclass
-from typing import Any, Tuple
+from typing import Callable, Optional, Tuple
 
+import jax
+import jax.numpy as jnp
+import optax
+from hydra.utils import instantiate
 from transformers import PretrainedConfig
 
 
@@ -119,10 +123,50 @@ class TrainConfig:
     monitor: str
     disc_weight: float
     num_epochs: int
-    dtype: str
+    dtype: jnp.dtype
     distributed: bool
     seed: int
-    optimizer: Any
-    optimizer_disc: Any
+    optimizer: optax.GradientTransformation
+    optimizer_disc: optax.GradientTransformation
     disc_start: int
-    temp_scheduler: Any
+    temp_scheduler: Optional[Callable]
+
+    def __post_init__(self):
+        # load model hparams
+        self.model_hparams = instantiate(self.model_hparams)
+        assert type(self.model_hparams) == VQGANConfig
+        # load disc hparams
+        self.disc_hparams = instantiate(self.disc_hparams)
+        assert type(self.disc_hparams) == DiscConfig
+        # conver shape list to tuple shape
+        self.input_shape = tuple(self.input_shape)
+        assert len(self.input_shape) == 3
+        # set dtype
+        if self.dtype == "float64":
+            self.dtype = jnp.float64
+        elif self.dtype == "float32":
+            self.dtype = jnp.float32
+        elif self.dtype == "float16":
+            self.dtype = jnp.float16
+        elif self.dtype == "bfloat16":
+            self.dtype = jnp.bfloat16
+        else:
+            raise ValueError(
+                f"""Invalid dtype {self.dtype}
+                             expected one of float64, float32, float16, bfloat16"""
+            )
+        # if distributed: chunk the dataset
+        if self.distributed:
+            self.train_batch_size = self.train_batch_size // jax.device_count()
+            self.test_batch_size = self.test_batch_size // jax.device_count()
+        # instantiate the optimizer
+        self.optimizer = instantiate(self.optimizer)
+        assert type(self.optimizer) == optax.GradientTransformation
+        # instantiate the optimizer for discriminator
+        self.optimizer_disc = instantiate(self.optimizer_disc)
+        assert type(self.optimizer_disc) == optax.GradientTransformation
+        # if optimizer is a dict, instantiate it
+        if self.temp_scheduler is not None:
+            self.temp_scheduler: Callable = instantiate(self.temp_scheduler)
+            print(type(self.temp_scheduler))
+            assert hasattr(self.temp_scheduler, "__call__")

@@ -3,7 +3,7 @@ import jax.numpy as jnp
 
 
 def reconstruction_loss(
-    predictions: jnp.ndarray, targets: jnp.ndarray, type: str = "l2"
+    predictions: jnp.ndarray, targets: jnp.ndarray, type: str = "l1"
 ) -> jnp.ndarray:
     """Compute reconstruction loss.
     Args:
@@ -25,7 +25,7 @@ def reconstruction_loss(
         raise ValueError(f"Unknown loss type: {type}")
 
 
-def dics_loss(real: jnp.ndarray, fake: jnp.ndarray, type: str = "hinge") -> float:
+def disc_loss(real: jnp.ndarray, fake: jnp.ndarray, type: str = "hinge") -> float:
     """Compute discriminator loss.
     Args:
         predictions: Predictions from the model.

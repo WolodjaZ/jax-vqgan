@@ -352,6 +352,8 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         """
         self._missing_keys: Set[str] = set()
         module = self.module_class(config=config, dtype=dtype, **kwargs)
+        self.seed = seed
+        self.dtype = dtype
         super().__init__(
             config,
             module,
@@ -394,7 +396,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
 
     def encode(
         self,
-        input: jnp.ndarray,
+        pixel_values: jnp.ndarray,
         params: Optional[FrozenDict] = None,
         dropout_rng: Optional[jax.random.PRNGKey] = None,
         gumble_rng: Optional[jax.random.PRNGKey] = None,
@@ -402,7 +404,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
     ) -> Tuple[jnp.ndarray, float, jnp.ndarray]:
         """Encode the input.
         Args:
-            input (jnp.ndarray): the input to the encoder.
+            pixel_values (jnp.ndarray): the input to the encoder.
             params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
             dropout_rng (Optional[jax.random.PRNGKey], optional): the dropout rng. Defaults to None.
             gumble_rng (Optional[jax.random.PRNGKey], optional): the gumbel rng. Defaults to None.
@@ -413,7 +415,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         rngs["gumbel"] = gumble_rng if gumble_rng is not None else {}
         return self.module.apply(
             {"params": params or self.params},
-            jnp.array(input),
+            pixel_values,
             not train,
             rngs=rngs,
             method=self.module.encode,
@@ -492,7 +494,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
 
     def __call__(
         self,
-        input: jnp.ndarray,
+        pixel_values: jnp.ndarray,
         params: Optional[FrozenDict] = None,
         dropout_rng: Optional[jax.random.PRNGKey] = None,
         gumble_rng: Optional[jax.random.PRNGKey] = None,
@@ -501,10 +503,11 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         """Encode and decode the input.
 
         Args:
-            input (jnp.ndarray): the input to the encoder.
+            pixel_values (jnp.ndarray): the input to the encoder.
             params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
             dropout_rng (Optional[jax.random.PRNGKey], optional): the dropout rng. Defaults to None.
             gumble_rng (Optional[jax.random.PRNGKey], optional): the gumbel rng. Defaults to None.
+                If gumble_rng is None then the defult rng is used and produce deterministic results.
             train (bool, optional): Training or inference mode. Defaults to False.
 
         Returns:
@@ -514,11 +517,17 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
                 the log prob of the latent vector,
                 the indices of the latent vector.
         """
+        # Check dtype
+        pixel_values = (
+            pixel_values.astype(self.dtype)
+            if pixel_values.dtype != self.dtype
+            else pixel_values
+        )
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
-        rngs["gumbel"] = gumble_rng if gumble_rng is not None else {}
+        rngs["gumbel"] = gumble_rng if gumble_rng is not None else self.key
         return self.module.apply(
-            {"params": params or self.params}, input, not train, rngs=rngs
+            {"params": params or self.params}, pixel_values, not train, rngs=rngs
         )
 
 

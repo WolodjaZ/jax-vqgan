@@ -9,7 +9,7 @@ import modules.losses as losses
 
 @pytest.fixture()
 def JAX_PRNG() -> Tuple[jax.random.PRNGKey, jnp.dtype]:
-    # Seeding for random operations
+    """Seeding for random operations."""
     test_rng = jax.random.PRNGKey(42)
     dtype = jnp.float32
     return test_rng, dtype
@@ -46,23 +46,23 @@ def test_reconstruction_loss(JAX_PRNG, type_loss: str, test_numbs: int):
 
 
 @pytest.mark.parametrize("type_loss", ["vanilla", "hinge"])
-def test_dics_loss(JAX_PRNG, type_loss: str):
+def test_disc_loss(JAX_PRNG, type_loss: str):
     "Test dics loss"
     _, dtype = JAX_PRNG
 
     # case perfect prediction
     real = jnp.ones((4, 70, 70, 1), dtype=dtype)
     fake = jnp.zeros((4, 70, 70, 1), dtype=dtype)
-    loss_perfect = losses.dics_loss(real, fake, type=type_loss)
+    loss_perfect = losses.disc_loss(real, fake, type=type_loss)
     assert jnp.allclose(float(loss_perfect), 0.5, atol=0.01)
 
     # case half good prediction
     real_bad = jnp.zeros((4, 70, 70, 1), dtype=dtype)
-    loss_h_real = losses.dics_loss(real_bad, fake, type=type_loss)
+    loss_h_real = losses.disc_loss(real_bad, fake, type=type_loss)
     assert loss_h_real > loss_perfect
 
     fake_bad = jnp.ones((4, 70, 70, 1), dtype=dtype)
-    loss_h_fake = losses.dics_loss(real, fake_bad, type=type_loss)
+    loss_h_fake = losses.disc_loss(real, fake_bad, type=type_loss)
     assert loss_h_fake > loss_perfect
     if type_loss == "hinge":
         assert jnp.allclose(loss_h_fake, loss_h_real, atol=0.001)
@@ -70,7 +70,7 @@ def test_dics_loss(JAX_PRNG, type_loss: str):
         assert loss_h_fake > loss_h_real
 
     # case bad prediction
-    loss_bad = losses.dics_loss(real_bad, fake_bad, type=type_loss)
+    loss_bad = losses.disc_loss(real_bad, fake_bad, type=type_loss)
     assert loss_bad > loss_h_real
     assert loss_bad > loss_h_fake
 

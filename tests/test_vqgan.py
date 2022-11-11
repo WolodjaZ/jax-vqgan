@@ -11,7 +11,7 @@ from modules import config, vqgan
 
 @pytest.fixture()
 def JAX_PRNG() -> Tuple[jax.random.PRNGKey, jnp.dtype]:
-    # Seeding for random operations
+    """Seeding for random operations."""
     test_rng = jax.random.PRNGKey(42)
     dtype = jnp.float32
     return test_rng, dtype
