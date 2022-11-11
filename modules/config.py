@@ -1,5 +1,10 @@
-from typing import Tuple
+from dataclasses import dataclass
+from typing import Callable, Optional, Tuple
 
+import jax
+import jax.numpy as jnp
+import optax
+from hydra.utils import instantiate
 from transformers import PretrainedConfig
 
 
@@ -44,6 +49,8 @@ class VQGANConfig(PretrainedConfig):
         resamp_with_conv: bool = True,
         use_gumbel: bool = False,
         gumb_temp: float = 1.0,
+        beta: float = 0.25,
+        kl_weight: float = 5e-4,
         act_name: str = "swish",
         give_pre_end: bool = False,
         **kwargs,
@@ -64,6 +71,102 @@ class VQGANConfig(PretrainedConfig):
         self.resamp_with_conv = resamp_with_conv
         self.use_gumbel = use_gumbel
         self.gumb_temp = gumb_temp
+        self.beta = beta
+        self.kl_weight = kl_weight
         self.act_name = act_name
         self.give_pre_end = give_pre_end
         self.num_resolutions = len(ch_mult)
+
+
+class DiscConfig(PretrainedConfig):
+    """Configuration class to store the configuration of a Discriminator model.
+
+    Args:
+        PretrainedConfig (_type_): _description_
+    """
+
+    def __init__(
+        self,
+        input_last_dim: int = 3,
+        output_last_dim: int = 1,
+        resolution: int = 256,
+        ndf: int = 64,
+        n_layers: int = 3,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.input_last_dim = input_last_dim
+        self.output_last_dim = output_last_dim
+        self.resolution = resolution
+        self.ndf = ndf
+        self.n_layers = n_layers
+
+
+@dataclass
+class TrainConfig:
+    """Configuration class to store the configuration of a train model.
+
+    Arguments:
+
+    """
+
+    model_name: str
+    model_hparams: VQGANConfig
+    disc_hparams: DiscConfig
+    save_dir: str
+    log_dir: str
+    check_val_every_n_epoch: int
+    input_shape: Tuple[int, int, int]
+    train_batch_size: int
+    test_batch_size: int
+    codebook_weight: float
+    monitor: str
+    disc_weight: float
+    num_epochs: int
+    dtype: jnp.dtype
+    distributed: bool
+    seed: int
+    optimizer: optax.GradientTransformation
+    optimizer_disc: optax.GradientTransformation
+    disc_start: int
+    temp_scheduler: Optional[Callable]
+
+    def __post_init__(self):
+        # load model hparams
+        self.model_hparams = instantiate(self.model_hparams)
+        assert type(self.model_hparams) == VQGANConfig
+        # load disc hparams
+        self.disc_hparams = instantiate(self.disc_hparams)
+        assert type(self.disc_hparams) == DiscConfig
+        # conver shape list to tuple shape
+        self.input_shape = tuple(self.input_shape)
+        assert len(self.input_shape) == 3
+        # set dtype
+        if self.dtype == "float64":
+            self.dtype = jnp.float64
+        elif self.dtype == "float32":
+            self.dtype = jnp.float32
+        elif self.dtype == "float16":
+            self.dtype = jnp.float16
+        elif self.dtype == "bfloat16":
+            self.dtype = jnp.bfloat16
+        else:
+            raise ValueError(
+                f"""Invalid dtype {self.dtype}
+                             expected one of float64, float32, float16, bfloat16"""
+            )
+        # if distributed: chunk the dataset
+        if self.distributed:
+            self.train_batch_size = self.train_batch_size // jax.device_count()
+            self.test_batch_size = self.test_batch_size // jax.device_count()
+        # instantiate the optimizer
+        self.optimizer = instantiate(self.optimizer)
+        assert type(self.optimizer) == optax.GradientTransformation
+        # instantiate the optimizer for discriminator
+        self.optimizer_disc = instantiate(self.optimizer_disc)
+        assert type(self.optimizer_disc) == optax.GradientTransformation
+        # if optimizer is a dict, instantiate it
+        if self.temp_scheduler is not None:
+            self.temp_scheduler: Callable = instantiate(self.temp_scheduler)
+            print(type(self.temp_scheduler))
+            assert hasattr(self.temp_scheduler, "__call__")

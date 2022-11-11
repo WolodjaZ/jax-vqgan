@@ -257,12 +257,14 @@ class UpsamplingBlock(nn.Module):
         config (VQGANConfig): the config of the model.
         curr_res (int): current resolution.
         blck_idx (int): current block index.
+        act_fn (Callable): activation function.
         dtype (jnp.dtype): the dtype of the computation (default: float32).
     """
 
     config: VQGANConfig
     curr_res: int
     block_idx: int
+    act_fn: Callable = nn.gelu
     dtype: jnp.dtype = jnp.float32
 
     def setup(self):
@@ -287,7 +289,7 @@ class UpsamplingBlock(nn.Module):
                 ResNetBlock(
                     block_in,
                     block_out,
-                    act_fn=self.config.act_fn,
+                    act_fn=self.act_fn,
                     temb_channels=self.temb_ch,
                     dropout_prob=self.config.dropout,
                     dtype=self.dtype,
@@ -341,12 +343,14 @@ class DownsamplingBlock(nn.Module):
         config (VQGANConfig): the config of the model.
         curr_res (int): current resolution.
         blck_idx (int): current block index.
+        act_fn (Callable): activation function.
         dtype (jnp.dtype): the dtype of the computation (default: float32).
     """
 
     config: VQGANConfig
     curr_res: int
     block_idx: int
+    act_fn: Callable = nn.gelu
     dtype: jnp.dtype = jnp.float32
 
     def setup(self):
@@ -367,7 +371,7 @@ class DownsamplingBlock(nn.Module):
                 ResNetBlock(
                     block_in,
                     block_out,
-                    act_fn=self.config.act_fn,
+                    act_fn=self.act_fn,
                     temb_channels=self.temb_ch,
                     dropout_prob=self.config.dropout,
                     dtype=self.dtype,
@@ -484,10 +488,12 @@ class Encoder(nn.Module):
 
     Attributes:
         config (VQGANConfig): the config of the model.
+        act_fn (str): activation function.
         dtype (jnp.dtype): the dtype of the computation (default: float32).
     """
 
     config: VQGANConfig
+    act_fn: Callable = nn.gelu
     dtype: jnp.dtype = jnp.float32
 
     @nn.compact
@@ -518,7 +524,7 @@ class Encoder(nn.Module):
         mid_channels = self.config.ch * self.config.ch_mult[-1]
         x = MidBlock(
             mid_channels,
-            act_fn=self.config.act_fn,
+            act_fn=self.act_fn,
             temb_channels=temb_ch,
             dropout_prob=self.config.dropout,
             dtype=self.dtype,
@@ -526,7 +532,7 @@ class Encoder(nn.Module):
 
         # end CFN
         x = nn.GroupNorm(num_groups=32, dtype=self.dtype)(x)
-        x = self.config.act_fn(x)
+        x = self.act_fn(x)
         x = nn.Conv(
             2 * self.config.z_channels
             if self.config.double_z
@@ -557,10 +563,12 @@ class Decoder(nn.Module):
 
     Attributes:
         config (VQGANConfig): the config of the model.
+        act_fn (str): activation function.
         dtype (jnp.dtype): the dtype of the computation (default: float32).
     """
 
     config: VQGANConfig
+    act_fn: Callable = nn.gelu
     dtype: jnp.dtype = jnp.float32
 
     @nn.compact
@@ -584,7 +592,7 @@ class Decoder(nn.Module):
         # middle
         x = MidBlock(
             block_in,
-            act_fn=self.config.act_fn,
+            act_fn=self.act_fn,
             temb_channels=temb_ch,
             dropout_prob=self.config.dropout,
             dtype=self.dtype,
@@ -609,7 +617,7 @@ class Decoder(nn.Module):
 
         # CFN
         x = nn.GroupNorm(num_groups=32, dtype=self.dtype)(x)
-        x = self.config.act_fn(x)
+        x = self.act_fn(x)
         x = nn.Conv(
             self.config.out_ch,
             kernel_size=(3, 3),

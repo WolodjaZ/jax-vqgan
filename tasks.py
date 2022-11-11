@@ -11,6 +11,7 @@ def help(c):
     print("  - venv: Create a virtual environment.")
     print("  - clean: Clean all unnecessary files.")
     print("  - test: Test project.")
+    print("  - test_extended: Test project with extended version.")
     print("  - coverage: Coverage analysis.")
     print("  - mypy: Typing analysis.")
     print("  - docs: Build documentation.")
@@ -27,7 +28,9 @@ def venv(c):
     cmd = """source venv/bin/activate &&
             python3 -m pip install --upgrade pip setuptools wheel &&
             python3 -m pip install -e requirements.txt &&
-            pre-commit install && pre-commit autoupdate"""
+            python3 -m pip install nox==2022.8.7 pre-commit==2.20.0 &&
+            pre-commit install && pre-commit autoupdate
+            """
     c.run(cmd)
 
 
@@ -44,6 +47,11 @@ def clean(c, python_version=CURRENT_PYTHON_VERSION):
 @task
 def test(c, python_version=CURRENT_PYTHON_VERSION):
     c.run(f"nox -s test-{python_version}")
+
+
+@task
+def test_extended(c, python_version=CURRENT_PYTHON_VERSION):
+    c.run(f"nox -s test_extended-{python_version}")
 
 
 @task
