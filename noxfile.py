@@ -1,12 +1,11 @@
 import nox
 
 SUPPORTED_PY_VERSIONS = ["3.8", "3.9", "3.10"]
-nox.options.sessions = ["test", "test_extended", "coverage", "mypy", "docs"]
+nox.options.sessions = ["test", "test_extended", "lint", "coverage", "mypy", "docs"]
 
 
 def _deps(session: nox.Session) -> None:
     session.install("--upgrade", "setuptools", "pip", "wheel")
-    session.install("pre-commit==2.20.0")
 
 
 def _install_dev_packages(session):
@@ -71,9 +70,7 @@ def mypy(session: nox.Session) -> None:
     session.run("mypy", "--ignore-missing-imports", "modules", "tests")
 
 
-nox.session(python=SUPPORTED_PY_VERSIONS)
-
-
+@nox.session(python=SUPPORTED_PY_VERSIONS)
 def lint(session: nox.Session) -> None:
     """Lint install."""
     _deps(session)
