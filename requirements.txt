@@ -6,3 +6,4 @@ jaxlib==0.3.22
 tensorflow==2.10.0
 transformers==4.24.0
 hydra-core==1.2.0
+tensorflow-datasets==4.7.0

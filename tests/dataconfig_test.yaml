@@ -1,0 +1,10 @@
+train_params:
+  batch_size: 2
+  shuffle: true
+test_params:
+  batch_size: 1
+  shuffle: false
+dataset_name: test
+dataset_root: test
+use_transforms: true
+size: 224
