@@ -13,7 +13,7 @@ def _install_dev_packages(session):
 
 
 def _install_test_dependencies(session):
-    session.install("pytest==7.2.0", "pytest-cov==4.0.0")
+    session.install("pytest==7.2.0", "pytest-cov==4.0.0", "pytest-mock==3.10.0")
 
 
 def _install_doc_dependencies(session):
@@ -57,7 +57,7 @@ def coverage(session: nox.Session) -> None:
         "not training_long",
         "tests",
     )
-    session.run("coverage", "report", "--fail-under=1")  # 100
+    session.run("coverage", "report", "--fail-under=1", "--ignore-errors")  # 100
     session.run("coverage", "erase")
 
 

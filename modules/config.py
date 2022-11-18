@@ -107,7 +107,33 @@ class TrainConfig:
     """Configuration class to store the configuration of a train model.
 
     Arguments:
-
+        model_name (str): name of the model to train. Used for saving and logging.
+        model_hparams (VQGANConfig): model hyperparameters. Check VQGANConfig for more details.
+        disc_hparams (DiscConfig): discriminator hyperparameters.
+            Check DiscConfig for more details.
+        save_dir (str): directory to save the model.
+        log_dir (str): directory to save the logs for tensorboard.
+        check_val_every_n_epoch (int): number of epochs to run validation.
+        input_shape (Tuple[int, int, int]): shape of the input image (H, W, C).
+        train_batch_size (int): batch size for training.  Only informative.
+        test_batch_size (optional, int): batch size for testing. Only informative.
+        codebook_weight (float): weight for the codebook loss (Quantizer part).
+        monitor (str): metric to monitor for saving best model.
+        disc_weight (float): weight for the discriminator loss.
+        num_epochs (int): number of epochs to train.
+        dtype (str): dtype to use for training.
+            Supported ["float32", "float16", "float16", "bfloat16"].
+        distributed (bool): whether to use distributed training.
+        seed (int): seed for random number generation.
+        optimizer (str): optimizer to use for training. Structure needs to be
+            optax Optimizer (Check optax for more details) with '__target__' parameter,
+            for specifing optax optimizer, and 'kwargs' parameter for passing to optimizer.
+            check config_test.yaml for example.
+        optimizer_disc (str): optimizer to use for discriminator training. Similar to optimizer.
+        disc_start (int): number of epochs to past to start using the discriminator.
+        temp_scheduler (optional): temperature scheduler to use for training. Similar to optimizer
+            but uses optax scheduler with '__target__' parameter, for specifing optax scheduler.
+            if None, then no scheduler is used. Check config_test.yaml for example.
     """
 
     model_name: str
@@ -168,5 +194,64 @@ class TrainConfig:
         # if optimizer is a dict, instantiate it
         if self.temp_scheduler is not None:
             self.temp_scheduler: Callable = instantiate(self.temp_scheduler)
-            print(type(self.temp_scheduler))
             assert hasattr(self.temp_scheduler, "__call__")
+
+
+@dataclass
+class DataParams:
+    """Train and test data parameters.
+    Arguments:
+        batch_size (int): batch size for training.
+        shuffle (bool): whether to shuffle the dataset.
+    """
+
+    batch_size: int
+    shuffle: bool
+
+
+@dataclass
+class DataConfig:
+    """Data configuration class.
+    Arguments:
+        train_params (DataParams): training data parameters. Check DataParams for more details.
+        test_params (DataParams): testing data parameters. Check DataParams for more details.
+        dataset_name (str): name of the dataset to use. Currently only supports "voc".
+        dataset_root (str): root directory of the dataset.
+        use_transforms (bool): whether to use transforms. Currently only supports horizontal flip.
+        size (int): size of image width and height.
+
+    """
+
+    train_params: DataParams
+    test_params: DataParams
+    dataset_name: str = ""
+    dataset_root: str = ""
+    use_transforms: bool = True
+    size: int = 224
+
+    def __post_init__(self):
+        # set train_params and test_params
+        self.train_params = DataParams(**self.train_params)
+        self.test_params = DataParams(**self.test_params)
+
+
+@dataclass
+class LoadConfig:
+    """Load configuration class to store the configuration of a train model and data.
+    Main configuration class to be used for training.
+
+    Arguments:
+        train (DataConfig): data configuration.
+        data (TrainConfig): (DataConfig) training configuration.
+    """
+
+    train: TrainConfig
+    data: DataConfig
+
+    def __post_init__(self):
+        self.train = TrainConfig(**self.train)
+        self.data = DataConfig(**self.data)
+
+        # set batch_size
+        self.train.train_batch_size = self.data.train_params.batch_size
+        self.train.test_batch_size = self.data.test_params.batch_size

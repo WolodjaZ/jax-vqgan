@@ -1,12 +1,17 @@
+import tempfile
 from typing import Tuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+import tensorflow as tf
+from omegaconf import OmegaConf
 from PIL import Image
 
-from modules import utils
+from modules import config, utils
+
+DATACONFIG_PATH = "tests/dataconfig_test.yaml"
 
 
 @pytest.fixture()
@@ -61,6 +66,154 @@ def test_DummyDataLoader(JAX_PRNG, batch_size, batches):
 
     # clean up
     del loader
+
+
+def test_DummyDataset(mocker):
+    """Test the DummyDataset."""
+    # load test data config
+    tf.random.set_seed(seed=42)
+    dtype = jnp.float32
+    mocker.patch(
+        "modules.utils.tf.image.random_flip_left_right", side_effect=lambda x: x
+    )
+    cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
+    load_confg = OmegaConf.to_container(cfg_omgega)
+    cfg = config.DataConfig(**load_confg)
+
+    # Train dataset
+    dataset_train_class = utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+    assert issubclass(type(dataset_train_class), utils.BaseDataset)
+    dataset_train = dataset_train_class.get_dataset()
+    utils.tf.image.random_flip_left_right.assert_called_once()
+    dataset_train = dataset_train.as_numpy_iterator()
+    data = next(dataset_train)
+    assert data.shape == (cfg.size, cfg.size, 3)
+    assert data.dtype == jnp.float32
+
+    # Test dataset
+    cfg.use_transforms = False
+    dataset_test_class = utils.DummyDataset(train=False, dtype=dtype, config=cfg)
+    assert issubclass(type(dataset_test_class), utils.BaseDataset)
+    dataset_test = dataset_test_class.get_dataset()
+    utils.tf.image.random_flip_left_right.assert_called_once()
+    dataset_test = dataset_test.as_numpy_iterator()
+    data = next(dataset_test)
+    assert data.shape == (cfg.size, cfg.size, 3)
+    assert data.dtype == jnp.float32
+
+    # Clean up
+    del dataset_train, dataset_test, cfg_omgega, load_confg, cfg
+
+
+def test_reproducibility_Dataset(mocker):
+    # load test data config
+    import tensorflow as tf
+
+    tf.random.set_seed(seed=42)
+    dtype = jnp.float32
+    mocker.patch(
+        "modules.utils.tf.image.random_flip_left_right", side_effect=lambda x: x
+    )
+    cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
+    load_confg = OmegaConf.to_container(cfg_omgega)
+    cfg = config.DataConfig(**load_confg)
+
+    dataset_train_class = utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+    dataset_first = dataset_train_class.get_dataset().as_numpy_iterator()
+
+    import tensorflow as tf
+
+    tf.random.set_seed(seed=42)
+    dataset_train_class = utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+    dataset_second = dataset_train_class.get_dataset().as_numpy_iterator()
+
+    for _ in range(3):
+        try:
+            assert np.all(next(dataset_first) == next(dataset_second))
+        except StopIteration:
+            break
+
+    # Clean up
+    del dataset_first, dataset_second, cfg_omgega, load_confg, cfg
+
+
+def test_TensorflowDataset(mocker):
+    """Test the TensorflowDataset."""
+    # load test data config
+    tf.random.set_seed(seed=42)
+    dtype = jnp.float32
+    mocker.patch(
+        "modules.utils.tf.image.random_flip_left_right", side_effect=lambda x: x
+    )
+    cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
+    load_confg = OmegaConf.to_container(cfg_omgega)
+    load_confg["dataset_name"] = "cifar10"
+    with tempfile.TemporaryDirectory() as dp:
+        load_confg["dataset_root"] = dp
+        cfg = config.DataConfig(**load_confg)
+
+        # Train dataset
+        dataset_train_class = utils.TensorflowDataset(
+            train=True, dtype=dtype, config=cfg
+        )
+        assert issubclass(type(dataset_train_class), utils.BaseDataset)
+        dataset_train = dataset_train_class.get_dataset()
+        utils.tf.image.random_flip_left_right.assert_called_once()
+        dataset_train = dataset_train.as_numpy_iterator()
+        data = next(dataset_train)
+        assert data.shape == (cfg.size, cfg.size, 3)
+        assert data.dtype == jnp.float32
+
+        # Test dataset
+        cfg.use_transforms = False
+        dataset_test_class = utils.TensorflowDataset(
+            train=False, dtype=dtype, config=cfg
+        )
+        assert issubclass(type(dataset_test_class), utils.BaseDataset)
+        dataset_test = dataset_test_class.get_dataset()
+        utils.tf.image.random_flip_left_right.assert_called_once()
+        dataset_test = dataset_test.as_numpy_iterator()
+        data = next(dataset_test)
+        assert data.shape == (cfg.size, cfg.size, 3)
+        assert data.dtype == jnp.float32
+
+    # Clean up
+    del dataset_train, dataset_test, cfg_omgega, load_confg, cfg
+
+
+def test_DataLoader():
+    """Test the DataLoader."""
+    # load test data config
+    tf.random.set_seed(seed=42)
+    dtype = jnp.float32
+    cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
+    load_confg = OmegaConf.to_container(cfg_omgega)
+    cfg = utils.DataConfig(**load_confg)
+
+    # create dummy dataset
+    dataset_train_class = utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+
+    # create dataloader
+    loader = utils.DataLoader(dataset_train_class, distributed=False)
+    assert len(loader) == len(dataset_train_class) // cfg.train_params.batch_size
+    in_loop = 0
+    for x in loader():
+        assert x.shape == (cfg.train_params.batch_size, cfg.size, cfg.size, 3)
+        assert x.dtype == dtype
+        assert in_loop < len(loader)
+        in_loop += 1
+    assert in_loop == len(loader)
+
+    in_loop = 0
+    for x in loader():
+        assert x.shape == (cfg.train_params.batch_size, cfg.size, cfg.size, 3)
+        assert x.dtype == dtype
+        in_loop += 1
+
+    assert in_loop == len(loader)
+
+    # clean up
+    del loader, dataset_train_class, cfg_omgega, load_confg, cfg
 
 
 def test_VQGanImageProcessor():
