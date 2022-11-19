@@ -30,4 +30,4 @@ jobs:
           nox -s mypy-3.8
     -   name: Execute tests
         run: |
-          nox -v -s test_extended-3.8
+          nox -s test-3.8
