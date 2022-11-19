@@ -6,7 +6,6 @@ nox.options.sessions = ["test", "test_extended", "lint", "coverage", "mypy", "do
 
 def _deps(session: nox.Session) -> None:
     session.install("--upgrade", "setuptools", "pip", "wheel")
-    session.install("pre-commit==2.20.0")
 
 
 def _install_dev_packages(session):
