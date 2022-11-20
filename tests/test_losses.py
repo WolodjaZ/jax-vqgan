@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Callable, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -16,17 +16,17 @@ def JAX_PRNG() -> Tuple[jax.random.PRNGKey, jnp.dtype]:
 
 
 @pytest.mark.parametrize(
-    "type_loss, test_numbs",
+    "loss_fn, test_numbs",
     [
-        ("l2", 4),
-        ("l2", 8),
-        ("l1", 4),
-        ("l1", 8),
-        ("combo", 4),
-        ("combo", 8),
+        (losses.l2_loss, 4),
+        (losses.l2_loss, 8),
+        (losses.l1_loss, 4),
+        (losses.l1_loss, 8),
+        (losses.combo_loss, 4),
+        (losses.combo_loss, 8),
     ],
 )
-def test_reconstruction_loss(JAX_PRNG, type_loss: str, test_numbs: int):
+def test_reconstruction_loss(JAX_PRNG, loss_fn: Callable, test_numbs: int):
     "Test reconstruction loss"
     rng, dtype = JAX_PRNG
 
@@ -36,7 +36,7 @@ def test_reconstruction_loss(JAX_PRNG, type_loss: str, test_numbs: int):
     y = x
     loss_prev = jnp.zeros_like(x)
     for _ in range(test_numbs):
-        loss = losses.reconstruction_loss(y, x, type=type_loss)
+        loss = loss_fn(y, x)
         assert loss.shape == (4, 256)
         assert jnp.mean(loss) >= jnp.mean(loss_prev)
         rng, rng_data = jax.random.split(rng)
@@ -45,32 +45,32 @@ def test_reconstruction_loss(JAX_PRNG, type_loss: str, test_numbs: int):
     del loss_prev, loss, x, y
 
 
-@pytest.mark.parametrize("type_loss", ["vanilla", "hinge"])
-def test_disc_loss(JAX_PRNG, type_loss: str):
+@pytest.mark.parametrize("loss_fn", [losses.disc_loss_vanilla, losses.disc_loss_hinge])
+def test_disc_loss(JAX_PRNG, loss_fn: Callable):
     "Test dics loss"
     _, dtype = JAX_PRNG
 
     # case perfect prediction
     real = jnp.ones((4, 70, 70, 1), dtype=dtype)
     fake = jnp.zeros((4, 70, 70, 1), dtype=dtype)
-    loss_perfect = losses.disc_loss(real, fake, type=type_loss)
+    loss_perfect = loss_fn(real, fake)
     assert jnp.allclose(float(loss_perfect), 0.5, atol=0.01)
 
     # case half good prediction
     real_bad = jnp.zeros((4, 70, 70, 1), dtype=dtype)
-    loss_h_real = losses.disc_loss(real_bad, fake, type=type_loss)
+    loss_h_real = loss_fn(real_bad, fake)
     assert loss_h_real > loss_perfect
 
     fake_bad = jnp.ones((4, 70, 70, 1), dtype=dtype)
-    loss_h_fake = losses.disc_loss(real, fake_bad, type=type_loss)
+    loss_h_fake = loss_fn(real, fake_bad)
     assert loss_h_fake > loss_perfect
-    if type_loss == "hinge":
+    if loss_fn == losses.disc_loss_hinge:
         assert jnp.allclose(loss_h_fake, loss_h_real, atol=0.001)
-    elif type_loss == "vanilla":
+    elif loss_fn == losses.disc_loss_vanilla:
         assert loss_h_fake > loss_h_real
 
     # case bad prediction
-    loss_bad = losses.disc_loss(real_bad, fake_bad, type=type_loss)
+    loss_bad = loss_fn(real_bad, fake_bad)
     assert loss_bad > loss_h_real
     assert loss_bad > loss_h_fake
 

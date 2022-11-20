@@ -225,9 +225,7 @@ def test_UpsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use):
         # Create a dummy input
         rng, init_rng, dropout_init_rng = jax.random.split(rng, num=3)
         if block_idx == len(ch_mult) - 1:
-            x = jnp.ones(
-                (1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[-1]), dtype=dtype
-            )  # [BxHxWxC]
+            x = jnp.ones((1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[-1]), dtype=dtype)  # [BxHxWxC]
         else:
             x = jnp.ones(
                 (1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[block_idx + 1]), dtype=dtype
@@ -303,9 +301,7 @@ def test_fail_UpsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use, ch):
         # Create a dummy input
         rng, init_rng, dropout_init_rng = jax.random.split(rng, num=3)
         if block_idx == len(ch_mult) - 1:
-            x = jnp.ones(
-                (1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[-1]), dtype=dtype
-            )  # [BxHxWxC]
+            x = jnp.ones((1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[-1]), dtype=dtype)  # [BxHxWxC]
         else:
             x = jnp.ones(
                 (1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[block_idx + 1]), dtype=dtype
@@ -321,9 +317,7 @@ def test_fail_UpsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use, ch):
                     temb=temb,
                     deterministic=True,
                 )["params"]
-            assert "block_in must be divisible by 32 for GroupNorm" in str(
-                excinfo.value
-            )
+            assert "block_in must be divisible by 32 for GroupNorm" in str(excinfo.value)
         else:
             with pytest.raises(AssertionError) as excinfo:
                 _ = upsampleblock.init(
@@ -402,9 +396,7 @@ def test_DownsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use):
         )
         assert y is not None
         print(y.shape)
-        if (
-            block_idx == len(config_vqgan.ch_mult) - 1
-        ):  # Last block don't change the resolution
+        if block_idx == len(config_vqgan.ch_mult) - 1:  # Last block don't change the resolution
             assert y.shape == (1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[block_idx])
         else:
             assert y.shape == (
@@ -458,9 +450,7 @@ def test_fail_DownsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use, ch):
         # Create a dummy input
         rng, init_rng, dropout_init_rng = jax.random.split(rng, num=3)
         if block_idx == len(ch_mult) - 1:
-            x = jnp.ones(
-                (1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[-1]), dtype=dtype
-            )  # [BxHxWxC]
+            x = jnp.ones((1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[-1]), dtype=dtype)  # [BxHxWxC]
         else:
             x = jnp.ones(
                 (1, hw_ch, hw_ch, config_vqgan.ch * ch_mult[block_idx + 1]), dtype=dtype
@@ -476,9 +466,7 @@ def test_fail_DownsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use, ch):
                     temb=temb,
                     deterministic=True,
                 )["params"]
-            assert "block_in must be divisible by 32 for GroupNorm" in str(
-                excinfo.value
-            )
+            assert "block_in must be divisible by 32 for GroupNorm" in str(excinfo.value)
         else:
             with pytest.raises(AssertionError) as excinfo:
                 _ = upsampleblock.init(
@@ -488,9 +476,7 @@ def test_fail_DownsamplingBlock(JAX_PRNG, curr_res, ch_mult, temb_use, ch):
                     deterministic=True,
                 )["params"]
 
-            assert "DownsamplingBlock don't use temporal embedding" in str(
-                excinfo.value
-            )
+            assert "DownsamplingBlock don't use temporal embedding" in str(excinfo.value)
 
         # Clean up
         del upsampleblock, x
@@ -588,9 +574,9 @@ def test_Encoder(JAX_PRNG, ch, ch_mult, z_channels, double_z):
     x = jnp.ones((1, hw_ch, hw_ch, 3), dtype=dtype)  # [BxHxWxC]
 
     # Check initialization
-    params = encoder.init(
-        {"params": init_rng, "dropout": dropout_init_rng}, x, deterministic=True
-    )["params"]
+    params = encoder.init({"params": init_rng, "dropout": dropout_init_rng}, x, deterministic=True)[
+        "params"
+    ]
     assert params is not None
 
     # Check forward pass
@@ -609,49 +595,6 @@ def test_Encoder(JAX_PRNG, ch, ch_mult, z_channels, double_z):
 
     # Clean up
     del encoder, params, x, y
-
-
-def test_Encoder_with_configs(JAX_PRNG):
-    "Test that the Encoder works with used configs"
-    pass
-
-
-#    config_vqgan = None # Load config
-#    act_fn = nn.swish
-#    hw_ch = config_vqgan.num_resolutions*2
-#    out_channels = config_vqgan.z_channels*2 if config_vqgan.double_z else config_vqgan.z_channels
-#    rng, dtype = JAX_PRNG
-#
-#    # Check instantiation
-#    encoder = models.Encoder(config_vqgan, act_fn=act_fn, dtype=dtype)
-#    assert encoder is not None
-#    assert encoder.dtype == dtype
-#
-#    # Create a dummy input
-#    rng, init_rng, dropout_init_rng = jax.random.split(rng, num=3)
-#    x = jnp.ones((1, hw_ch, hw_ch, 3), dtype=dtype) #[BxHxWxC]
-#
-#    # Check initialization
-#    params = encoder.init({'params': init_rng, 'dropout': dropout_init_rng},
-#                           x,
-#                           deterministic=True)['params']
-#    assert params is not None
-#
-#    # Check forward pass
-#    rng, dropout_apply_rng = jax.random.split(rng)
-#    y = encoder.apply({'params': params},
-#                       x,
-#                       deterministic=True,
-#                       rngs={'dropout': dropout_apply_rng})
-#    assert y is not None
-#    assert y.shape == (1,
-#                       hw_ch//(2**(config_vqgan.num_resolutions-1)),
-#                       hw_ch//(2**(config_vqgan.num_resolutions-1)),
-#                       out_channels)
-#    assert y.dtype == dtype
-#
-#    # Clean up
-#    del encoder, params, x, y
 
 
 @pytest.mark.parametrize(
@@ -688,9 +631,9 @@ def test_Decoder(JAX_PRNG, ch, ch_mult, z_channels, out_ch):
     x = jnp.ones((1, hw_ch, hw_ch, 3), dtype=dtype)  # [BxHxWxC]
 
     # Check initialization
-    params = decoder.init(
-        {"params": init_rng, "dropout": dropout_init_rng}, x, deterministic=True
-    )["params"]
+    params = decoder.init({"params": init_rng, "dropout": dropout_init_rng}, x, deterministic=True)[
+        "params"
+    ]
     assert params is not None
 
     # Check forward pass
@@ -709,44 +652,3 @@ def test_Decoder(JAX_PRNG, ch, ch_mult, z_channels, out_ch):
 
     # Clean up
     del decoder, params, x, y
-
-
-def test_Decoder_with_configs(JAX_PRNG):
-    "Test that the Decoder works with used configs"
-    pass
-
-
-#    config_vqgan = None # Load config
-#    act_fn = nn.swish
-#    hw_ch = 1
-#    rng, dtype = JAX_PRNG
-#
-#    # Check instantiation
-#    decoder = models.Decoder(config_vqgan, act_fn=act_fn, dtype=dtype)
-#    assert decoder is not None
-#    assert decoder.dtype == dtype
-#
-#    # Create a dummy input
-#    rng, init_rng, dropout_init_rng = jax.random.split(rng, num=3)
-#    x = jnp.ones((1, hw_ch, hw_ch, 3), dtype=dtype) #[BxHxWxC]
-#
-#    # Check initialization
-#    params = decoder.init({'params': init_rng, 'dropout': dropout_init_rng},
-#                           x,
-#                           deterministic=True)['params']
-#    assert params is not None
-#
-#    # Check forward pass
-#    rng, dropout_apply_rng = jax.random.split(rng)
-#    y = decoder.apply({'params': params},
-#                       x, deterministic=True,
-#                       rngs={'dropout': dropout_apply_rng})
-#    assert y is not None
-#    assert y.shape == (1,
-#                       int(hw_ch*(2**(config_vqgan.num_resolutions-1))),
-#                       int(hw_ch*(2**(config_vqgan.num_resolutions-1))),
-#                       config_vqgan.out_ch)
-#    assert y.dtype == dtype
-#
-#    # Clean up
-#    del decoder, params, x, y

@@ -1,3 +1,4 @@
+import logging
 import os
 from collections import defaultdict
 from functools import partial
@@ -12,15 +13,15 @@ from flax.training import train_state
 from tqdm.auto import tqdm
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
 
-from modules import config, losses, vqgan
+from modules import config, losses, utils, vqgan
+
+logger = logging.getLogger(__name__)
 
 
 class TrainerModule:
     """Helper functions for training."""
 
-    def __init__(
-        self, module_config: config.TrainConfig, model_class: FlaxPreTrainedModel
-    ):
+    def __init__(self, module_config: config.TrainConfig, model_class: FlaxPreTrainedModel):
         """Module for summarizing all common training functionalities.
 
         Args:
@@ -52,15 +53,9 @@ class TrainerModule:
         )
 
         # Prepare logging
-        self.log_dir: str = os.path.join(
-            self.module_config.log_dir, f"{self.model_name}/"
-        )
-        self.logger: tf.summary.SummaryWriter = tf.summary.create_file_writer(
-            self.log_dir
-        )
-        self.save_dir: str = os.path.join(
-            self.module_config.save_dir, f"{self.model_name}/"
-        )
+        self.log_dir: str = os.path.join(self.module_config.log_dir, f"{self.model_name}/")
+        self.logger: tf.summary.SummaryWriter = tf.summary.create_file_writer(self.log_dir)
+        self.save_dir: str = os.path.join(self.module_config.save_dir, f"{self.model_name}/")
         # Create jitted training and eval functions
         self.create_functions()
 
@@ -81,46 +76,45 @@ class TrainerModule:
             apply_fn=self.state.apply_fn, params=self.state.params, tx=optimizer
         )
 
-    def train_model(self, train_loader: Any, val_loader: Any):
+    def train_model(self, train_loader: utils.DataLoader, val_loader: utils.DataLoader):
         """Train model for defined number of epochs.
         Args:
-            train_loader (Any): Training data loader.
-            val_loader (Any): Validation data loader.
+            train_loader (utils.DataLoader): Training data loader.
+            val_loader (utils.DataLoader): Validation data loader.
         """
         # We first need to create optimizer and the scheduler for the given number of epochs
         self.init_optimizer()
         # Track best eval metric
+        logger.info("Starting training 💃")
         best_eval = None
         with self.logger.as_default():
-            for epoch_idx in tqdm(range(1, self.module_config.num_epochs + 1)):
+            for epoch_idx in range(1, self.module_config.num_epochs + 1):
+                logger.info("Epoch: %d", epoch_idx)
                 train_metrics = self.train_epoch(train_loader, epoch=epoch_idx)
                 for key in train_metrics:
-                    tf.summary.scalar(
-                        f"train/{key}", train_metrics[key], step=epoch_idx
-                    )
+                    tf.summary.scalar(f"train/{key}", train_metrics[key], step=epoch_idx)
 
                 if epoch_idx % self.module_config.check_val_every_n_epoch == 0:
                     eval_metrics = self.eval_model(val_loader)
                     for key in eval_metrics:
-                        tf.summary.scalar(
-                            f"val/{key}", eval_metrics[key], step=epoch_idx
-                        )
+                        tf.summary.scalar(f"val/{key}", eval_metrics[key], step=epoch_idx)
                     if best_eval is None or eval_metrics[self.eval_key] > best_eval:
                         best_eval = eval_metrics[self.eval_key]
                         self.save_model()
 
                 self.logger.flush()
+        logger.info("Finished training ✅ with best eval metric: %f 😎", best_eval)
 
-    def train_epoch(self, data_loader: Any, epoch: int) -> Dict[str, float]:
+    def train_epoch(self, data_loader: utils.DataLoader, epoch: int) -> Dict[str, float]:
         """Train model for one epoch, and log avg metrics.
         Args:
-            data_loader (Any): Data loader to train on.
+            data_loader (utils.DataLoader): Data loader to train on.
             epoch (int): Current epoch.
         Returns:
             Dict[str, float]: Dictionary with all metrics.
         """
         metrics: Dict[str, float] = defaultdict(float)
-        for batch in tqdm(data_loader, desc="Training", leave=False):
+        for batch in tqdm(data_loader(), desc="Training", leave=False):
             # ensure that model have actual parameters
             self.model.params = self.state.params
             batch_metrics: Dict[str, float]
@@ -175,23 +169,21 @@ class TrainerModule:
         """
         raise NotImplementedError
 
-    def eval_model(self, data_loader: Any) -> Dict[str, float]:
+    def eval_model(self, data_loader: utils.DataLoader) -> Dict[str, float]:
         """Test model on all images of a data loader and return avg metrics.
         Args:
-            data_loader (Any): Data loader to evaluate on.
+            data_loader (utils.DataLoader): Data loader to evaluate on.
         Returns:
             Dict[str, float]: Dictionary with all metrics.
         """
         metrics: Dict[str, float] = defaultdict(float)
         count = 0
-        for batch in data_loader:
+        for batch in data_loader():
             batch_metrics: Dict[str, float]
             self.main_rng, batch_metrics = self.eval_step(
                 state=self.state, batch=batch, rng=self.main_rng
             )
-            batch_size = (
-                batch[0] if isinstance(batch, (tuple, list)) else batch
-            ).shape[0]
+            batch_size = (batch[0] if isinstance(batch, (tuple, list)) else batch).shape[0]
             count += batch_size
             for key in batch_metrics:
                 metrics[key] += batch_metrics[key] * batch_size
@@ -227,22 +219,57 @@ class TrainerModule:
 
 
 class TrainStateDisc(train_state.TrainState):
-    """Train state for discriminator."""
+    """Train state for discriminator.
+    Arguments:
+        apply_fn: The function that applies the model.
+        step: The current step.
+        params: The model parameters.
+        batch_stats: The batch statistics. Defaults to None.
+        tx: The optimizer. Defaults to None.
+        opt_state: The optimizer state. Defaults to None.
+    """
 
-    batch_stats: FrozenDict[str, Any]
+    batch_stats: Optional[FrozenDict[str, Any]] = None
 
 
 class TrainerVQGan(TrainerModule):
-    """Helper functions for training VQGAN."""
+    """Helper functions for training VQGAN.
+    Arguments:
+        recon_loss_fn (Callable): Reconstruction loss function. Defaults to l1 loss.
+        disc_loss_fn (Callable): Discriminator loss function. Defaults to hinge.
+    """
+
+    recon_loss_fn: Callable = losses.l1_loss
+    disc_loss_fn: Callable = losses.disc_loss_hinge
 
     def __init__(self, module_config: config.TrainConfig):
         # Initialize parent class
         self.module_config = module_config
         self.model_name = self.module_config.model_name
+        if self.module_config.recon_loss == "l2":
+            TrainerVQGan.recon_loss_fn = losses.l2_loss
+        elif self.module_config.recon_loss == "l1":
+            TrainerVQGan.recon_loss_fn = losses.l1_loss
+        elif self.module_config.recon_loss == "combo":
+            TrainerVQGan.recon_loss_fn = losses.combo_loss
+        else:
+            logger.warning(
+                f"""Reconstruction loss function {self.module_config.recon_loss} not supported.
+                Will be used default l2 loss instead."""
+            )
         # Train state for discriminator
         self.model_disc: FlaxPreTrainedModel = vqgan.VQGanDiscriminator(
             self.module_config.disc_hparams
         )
+        if self.module_config.disc_loss == "vanilla":
+            TrainerVQGan.disc_loss_fn = losses.disc_loss_vanilla
+        elif self.module_config.disc_loss == "hinge":
+            TrainerVQGan.disc_loss_fn = losses.disc_loss_hinge
+        else:
+            logger.warning(
+                f"""Discriminator loss function {self.module_config.disc_loss} not supported.
+                Will be used default hinge loss instead."""
+            )
         self.state_disc = TrainStateDisc(
             step=0,
             apply_fn=self.model_disc.__call__,
@@ -312,9 +339,7 @@ class TrainerVQGan(TrainerModule):
             apply_fn=self.state_disc.apply_fn,
             params=self.model_disc.params["params"],
             batch_stats=self.model_disc.params["batch_stats"],
-            tx=self.state_disc.tx
-            if self.state_disc.tx
-            else self.module_config.optimizer_disc,
+            tx=self.state_disc.tx if self.state_disc.tx else self.module_config.optimizer_disc,
         )
 
     def checkpoint_exists(self) -> bool:
@@ -322,18 +347,14 @@ class TrainerVQGan(TrainerModule):
         Returns:
             bool: True if model and discriminator exists, False otherwise.
         """
-        main_model: bool = (
-            os.path.exists(self.save_dir) and len(os.listdir(self.log_dir)) > 0
-        )
-        disc_model: bool = (
-            os.path.exists(self.save_dir_disc) and len(os.listdir(self.log_dir)) > 0
-        )
+        main_model: bool = os.path.exists(self.save_dir) and len(os.listdir(self.log_dir)) > 0
+        disc_model: bool = os.path.exists(self.save_dir_disc) and len(os.listdir(self.log_dir)) > 0
         return main_model and disc_model
 
-    def train_epoch(self, data_loader: Any, epoch: int) -> Dict[str, float]:
+    def train_epoch(self, data_loader: utils.DataLoader, epoch: int) -> Dict[str, float]:
         """Train model for one epoch, and log avg metrics.
         Args:
-            data_loader (Any): Data loader to train on.
+            data_loader (utils.DataLoader): Data loader to train on.
         Returns:
             Dict[str, float]: Dictionary with all metrics.
         """
@@ -341,7 +362,7 @@ class TrainerVQGan(TrainerModule):
         metrics_disc = defaultdict(float)
         metrics_disc["step"] = 0.0
         new_temp: float = self.temperature_scheduling(epoch - 1)
-        for batch in tqdm(data_loader, desc="Training", leave=False):
+        for batch in tqdm(data_loader(), desc="Training", leave=False):
             batch_metrics: Dict[str, float]
             self.state, self.state_disc, self.main_rng, batch_metrics = self.train_step(
                 state=self.state,
@@ -358,12 +379,7 @@ class TrainerVQGan(TrainerModule):
 
             if self.module_config.disc_start > epoch:
                 batch_metrics_disc: Dict[str, float]
-                (
-                    self.state,
-                    self.state_disc,
-                    self.main_rng,
-                    batch_metrics_disc,
-                ) = self.train_step(
+                (self.state, self.state_disc, self.main_rng, batch_metrics_disc,) = self.train_step(
                     state=self.state,
                     disc_state=self.state_disc,
                     batch=batch,
@@ -421,7 +437,7 @@ class TrainerVQGan(TrainerModule):
             )
             x_recon, z_q, codebook_loss, indices = outs
             # for now we will use l1 loss than it will be combined with perceptual loss
-            rec_loss = losses.reconstruction_loss(x_recon, batch, type="l1")
+            rec_loss = TrainerVQGan.recon_loss_fn(x_recon, batch)
             nll_loss = jnp.mean(rec_loss)
 
             # Generator loss (autoencode)
@@ -467,10 +483,7 @@ class TrainerVQGan(TrainerModule):
             disc_use: bool,
             batch_stats: FrozenDict[str, Any],
             model_params: Optional[FrozenDict[str, Any]],
-        ) -> Tuple[
-            jnp.ndarray,
-            Tuple[Dict[str, float], jax.random.PRNGKey, FrozenDict[str, Any]],
-        ]:
+        ) -> Tuple[jnp.ndarray, Tuple[Dict[str, float], jax.random.PRNGKey, FrozenDict[str, Any]]]:
             """Function to calculate the loss discriminator for a batch of images."""
             new_rng, gumble_apply_rng, dropout_apply_rng = jax.random.split(rng, num=3)
             outs = self.model(
@@ -483,18 +496,14 @@ class TrainerVQGan(TrainerModule):
             x_recon, z_q, codebook_loss, indices = outs
 
             # Discriminator loss
-            outs = self.model_disc(
-                batch, params=params, batch_stats=batch_stats, train=train
-            )
+            outs = self.model_disc(batch, params=params, batch_stats=batch_stats, train=train)
             logits_real, new_model_state = outs if train else (outs, None)
-            outs = self.model_disc(
-                x_recon, params=params, batch_stats=batch_stats, train=train
-            )
+            outs = self.model_disc(x_recon, params=params, batch_stats=batch_stats, train=train)
             logits_fake, new_model_state = outs if train else (outs, None)
             disc_factor = jax.lax.cond(
                 disc_use, lambda _: self.module_config.disc_weight, lambda _: 0.0, None
             )
-            loss = disc_factor * losses.disc_loss(logits_real, logits_fake)
+            loss = disc_factor * TrainerVQGan.disc_loss_fn(logits_real, logits_fake)
             metrics = {
                 "disc_loss": loss,
                 "logits_real": logits_real.mean(),
@@ -510,9 +519,7 @@ class TrainerVQGan(TrainerModule):
             rng: jax.random.PRNGKey,
             disc_use: bool,
             distributed: bool = False,
-        ) -> Tuple[
-            train_state.TrainState, TrainStateDisc, jax.random.PRNGKey, Dict[str, float]
-        ]:
+        ) -> Tuple[train_state.TrainState, TrainStateDisc, jax.random.PRNGKey, Dict[str, float]]:
             """Train step for autoencoder."""
             loss_fn = partial(
                 calculate_loss_autoencoder,
@@ -539,9 +546,7 @@ class TrainerVQGan(TrainerModule):
             rng: jax.random.PRNGKey,
             disc_use: bool,
             distributed: bool = False,
-        ) -> Tuple[
-            train_state.TrainState, TrainStateDisc, jax.random.PRNGKey, Dict[str, float]
-        ]:
+        ) -> Tuple[train_state.TrainState, TrainStateDisc, jax.random.PRNGKey, Dict[str, float]]:
             """Train step for discriminator."""
             loss_fn = partial(
                 calculate_loss_disc,
@@ -572,19 +577,13 @@ class TrainerVQGan(TrainerModule):
             optimizer_idx: int,
             disc_use: bool,
             distributed: bool,
-        ) -> Tuple[
-            train_state.TrainState, TrainStateDisc, jax.random.PRNGKey, Dict[str, float]
-        ]:
+        ) -> Tuple[train_state.TrainState, TrainStateDisc, jax.random.PRNGKey, Dict[str, float]]:
             """Train model on a single batch."""
             # calculate loss
             if optimizer_idx == 0:
-                outs = train_step_autoencoder(
-                    state, disc_state, batch, rng, disc_use, distributed
-                )
+                outs = train_step_autoencoder(state, disc_state, batch, rng, disc_use, distributed)
             else:
-                outs = train_step_disc(
-                    state, disc_state, batch, rng, disc_use, distributed
-                )
+                outs = train_step_disc(state, disc_state, batch, rng, disc_use, distributed)
             # outs = jax.lax.cond(
             #  optimizer_idx == 0,
             #    lambda _: train_step_autoencoder(state,

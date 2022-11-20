@@ -10,6 +10,7 @@ from omegaconf import OmegaConf
 from modules import config, training, utils, vqgan
 
 CONFIG_FILE = "tests/config_test.yaml"
+DATACONFIG_FILE = "tests/dataconfig_test.yaml"
 
 
 @pytest.fixture()
@@ -19,10 +20,24 @@ def LOAD_CONFIG():
     return cfg
 
 
-def test_TrainerVQGan_initalization(LOAD_CONFIG):
+@pytest.mark.parametrize(
+    "recon_loss, disc_loss",
+    [
+        (None, None),
+        ("l2", "vanilla"),
+        ("l1", "hinge"),
+        ("combo", "hinge"),
+    ],
+)
+def test_TrainerVQGan_initalization(LOAD_CONFIG, recon_loss, disc_loss):
     """Test that the TrainerVQGan can be initialized."""
     # test loading the config file
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
+    if recon_loss is not None:
+        load_confg["recon_loss"] = recon_loss
+    if disc_loss is not None:
+        load_confg["disc_loss"] = disc_loss
+
     with tempfile.TemporaryDirectory() as dp:
         load_confg["save_dir"] = os.path.join(dp, load_confg["save_dir"])
         load_confg["log_dir"] = os.path.join(dp, load_confg["log_dir"])
@@ -31,6 +46,8 @@ def test_TrainerVQGan_initalization(LOAD_CONFIG):
         type(cfg) == config.TrainConfig
         # test the TrainerModule initialization
         model = training.TrainerVQGan(cfg)
+        model.recon_loss_fn is not None
+        model.disc_loss_fn is not None
         assert model is not None
         assert model.model is not None
         type(model.model) == vqgan.VQModel
@@ -91,9 +108,7 @@ def test_temperature_scheduling(LOAD_CONFIG, scheduler):
         if scheduler is not None:
             for i in range(scheduler["transition_steps"]):
                 expected_value = 1.0 - i / scheduler["transition_steps"]
-                assert jnp.allclose(
-                    model.temperature_scheduling(i), expected_value, atol=1e-5
-                )
+                assert jnp.allclose(model.temperature_scheduling(i), expected_value, atol=1e-5)
         else:
             for i in range(10):
                 assert model.temperature_scheduling(i) == cfg.model_hparams.gumb_temp
@@ -117,18 +132,8 @@ def test_save_load_model(LOAD_CONFIG):
         model.init_optimizer()
         model.save_model()
         assert len(os.listdir(load_confg["save_dir"])) == 2
-        assert (
-            len(os.listdir(os.path.join(load_confg["save_dir"], f"{cfg.model_name}")))
-            > 0
-        )
-        assert (
-            len(
-                os.listdir(
-                    os.path.join(load_confg["save_dir"], f"{cfg.model_name}_disc")
-                )
-            )
-            > 0
-        )
+        assert len(os.listdir(os.path.join(load_confg["save_dir"], f"{cfg.model_name}"))) > 0
+        assert len(os.listdir(os.path.join(load_confg["save_dir"], f"{cfg.model_name}_disc"))) > 0
 
         # test the model loading
         assert model.checkpoint_exists()
@@ -137,9 +142,7 @@ def test_save_load_model(LOAD_CONFIG):
         model_new.load_model()
         assert model_new is not None
         assert tree_all(
-            tree_map(
-                lambda x, y: (x == y).all(), model.state.params, model_new.state.params
-            )
+            tree_map(lambda x, y: (x == y).all(), model.state.params, model_new.state.params)
         )
         assert model_new.state.tx is not None
         assert tree_all(
@@ -198,9 +201,7 @@ def test_train_step(LOAD_CONFIG):
         assert state_disc is not None
         assert state_disc.step == model.state_disc.step
         assert tree_all(
-            tree_map(
-                lambda x, y: (x == y).all(), state_disc.params, model.state_disc.params
-            )
+            tree_map(lambda x, y: (x == y).all(), state_disc.params, model.state_disc.params)
         )
         assert tree_all(
             tree_map(
@@ -230,9 +231,7 @@ def test_train_step(LOAD_CONFIG):
         assert state_disc is not None
         assert state_disc.step == model.state_disc.step
         assert tree_all(
-            tree_map(
-                lambda x, y: (x == y).all(), state_disc.params, model.state_disc.params
-            )
+            tree_map(lambda x, y: (x == y).all(), state_disc.params, model.state_disc.params)
         )
         assert tree_all(
             tree_map(
@@ -259,9 +258,7 @@ def test_train_step(LOAD_CONFIG):
         assert state is not None
         assert state.step == model.state.step
         assert state_disc.step == 1
-        assert tree_all(
-            tree_map(lambda x, y: (x == y).all(), state.params, model.state.params)
-        )
+        assert tree_all(tree_map(lambda x, y: (x == y).all(), state.params, model.state.params))
         assert batch_metrics is not None
         assert len(batch_metrics) == 3
 
@@ -326,21 +323,19 @@ def test_eval_step(LOAD_CONFIG):
 
 @pytest.mark.training_long
 @pytest.mark.parametrize(
-    "use_scheduler, bath_size, batches, num_steps_disc_start",
+    "use_scheduler, batch_size, num_steps_disc_start",
     [
-        (False, 2, 2, 2),
-        (False, 2, 4, 1),
-        (False, 4, 2, 2),
-        (False, 2, 2, 2),
-        (True, 2, 2, 2),
+        (False, 2, 2),
+        #        (False, 2, 1),
+        #        (False, 4, 2),
+        #        (False, 2, 2),
+        #        (True, 2, 2),
     ],
 )
-def test_train_epoch(
-    LOAD_CONFIG, use_scheduler, bath_size, batches, num_steps_disc_start
-):
+def test_train_epoch(LOAD_CONFIG, use_scheduler, batch_size, num_steps_disc_start):
     """Test that the model can be trained for one epoch."""
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
-    load_confg["train_batch_size"] = bath_size
+    load_confg["train_batch_size"] = batch_size
     load_confg["disc_start"] = num_steps_disc_start
     if use_scheduler is not None:
         load_confg["temp_scheduler"] = {
@@ -351,14 +346,24 @@ def test_train_epoch(
         }
     else:
         load_confg["temp_scheduler"] = None
+
+    # Load data config
+    data_cfg = OmegaConf.load(DATACONFIG_FILE)
+    load_dataconfg = OmegaConf.to_container(data_cfg)
+    load_dataconfg["train_params"]["batch_size"] = batch_size
+    cfg_data = config.DataConfig(**load_dataconfg)
+
     with tempfile.TemporaryDirectory() as dp:
         load_confg["save_dir"] = os.path.join(dp, load_confg["save_dir"])
         load_confg["log_dir"] = os.path.join(dp, load_confg["log_dir"])
         cfg = config.TrainConfig(**load_confg)
 
-        rng = jax.random.PRNGKey(cfg.seed)
-        input_shape = (cfg.train_batch_size,) + cfg.input_shape
-        loader = utils.DummyDataLoader(rng, input_shape, batches, cfg.dtype)
+        load_dataconfg["train_params"]["batch_size"] = cfg.train_batch_size
+        cfg_data = config.DataConfig(**load_dataconfg)
+
+        dataset_train_class = utils.DummyDataset(train=False, dtype=cfg.dtype, config=cfg_data)
+        loader = utils.DataLoader(dataset_train_class, distributed=False)
+
         model = training.TrainerVQGan(cfg)
         assert model is not None
         model.init_optimizer()
@@ -373,31 +378,33 @@ def test_train_epoch(
                 for k, v in metrics.items():
                     assert (
                         v != prev_metrics[k]
-                    ), f"Metric {k} is unchanged after training."
+                    ), f"Metric {k} is unchanged after training. Prev: {prev_metrics[k]}, new: {v}"
                 if "disc_loss" in metrics and "disc_loss" in prev_metrics:
                     assert (
                         metrics["disc_loss"] < prev_metrics["disc_loss"]
-                    ), "Discriminator loss is not decreasing."
+                    ), f"""Discriminator loss is not decreasing.
+                        Prev: {prev_metrics['disc_loss']}, new: {metrics['disc_loss']}"""
                 if "total_loss" in metrics and "total_loss" in prev_metrics:
                     assert (
                         metrics["total_loss"] < prev_metrics["total_loss"]
-                    ), "Total loss is not decreasing."
+                    ), f"""Total loss is not decreasing.
+                        Prev: {prev_metrics['total_loss']}, new: {metrics['total_loss']}"""
                 if use_scheduler is None:
                     assert (
                         metrics["temp"] == prev_metrics["temp"]
-                    ), "Temperature is not constant."
+                    ), f"""Temperature is not constant.
+                        Prev: {prev_metrics['temp']}, new: {metrics['temp']}"""
                 else:
                     assert (
                         metrics["temp"] < prev_metrics["temp"]
-                    ), "Temperature is not decreasing."
+                    ), f"""Temperature is not decreasing.
+                        Prev: {prev_metrics['temp']}, new: {metrics['temp']}"""
                 prev_metrics = metrics
             if num_steps_disc_start > i:
                 assert "disc_loss" in metrics
 
             assert tree_all(
-                tree_map(
-                    lambda x, y: (x == y).all(), model.model.params, model.state.params
-                )
+                tree_map(lambda x, y: (x == y).all(), model.model.params, model.state.params)
             ), "Model parameters are not updated."
             assert tree_all(
                 tree_map(
@@ -415,27 +422,33 @@ def test_train_epoch(
             ), "Discriminator batch stats are not updated."
 
     # clean up
-    del model, cfg, load_confg, prev_metrics, metrics, rng, loader
+    del model, cfg, load_confg, prev_metrics, metrics, loader
 
 
 @pytest.mark.training_long
 @pytest.mark.parametrize(
-    "batch_size, batches",
-    [(4, 2), (4, 1), (8, 2)],
+    "batch_size",
+    [4, 8],
 )
-def test_eval_model(LOAD_CONFIG, batch_size, batches):
+def test_eval_model(LOAD_CONFIG, batch_size):
     """Test that the model can be evaluated."""
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
     load_confg["test_batch_size"] = batch_size
+
+    # Load data config
+    data_cfg = OmegaConf.load(DATACONFIG_FILE)
+    load_dataconfg = OmegaConf.to_container(data_cfg)
+    load_dataconfg["test_params"]["batch_size"] = batch_size
+    cfg_data = config.DataConfig(**load_dataconfg)
 
     with tempfile.TemporaryDirectory() as dp:
         load_confg["save_dir"] = os.path.join(dp, load_confg["save_dir"])
         load_confg["log_dir"] = os.path.join(dp, load_confg["log_dir"])
         cfg = config.TrainConfig(**load_confg)
 
-        rng = jax.random.PRNGKey(cfg.seed)
-        input_shape = (cfg.train_batch_size,) + cfg.input_shape
-        loader = utils.DummyDataLoader(rng, input_shape, batches, cfg.dtype)
+        dataset_test_class = utils.DummyDataset(train=False, dtype=cfg.dtype, config=cfg_data)
+        loader = utils.DataLoader(dataset_test_class, distributed=False)
+
         model = training.TrainerVQGan(cfg)
         assert model is not None
         model.init_optimizer()
@@ -444,7 +457,6 @@ def test_eval_model(LOAD_CONFIG, batch_size, batches):
         assert prev_metrics is not None
         assert len(prev_metrics) > 0
         metrics = model.eval_model(loader)
-        print(metrics)
         assert metrics is not None
         assert len(metrics) > 0
         for k, v in metrics.items():
@@ -460,13 +472,16 @@ def test_eval_model(LOAD_CONFIG, batch_size, batches):
         for k, v in metrics.items():
             assert v != new_metrics[k], f"Metric {k} is unchanged after training."
 
+    # clean up
+    del model, cfg, load_confg, prev_metrics, metrics, loader, new_metrics
+
 
 @pytest.mark.training_long
 @pytest.mark.parametrize(
-    "batch_size, batches, epochs",
-    [(2, 2, 1), (2, 1, 1), (2, 2, 2), (2, 2, 4)],
+    "batch_size, epochs",
+    [(2, 1), (2, 2), (2, 4)],
 )
-def test_train_model(LOAD_CONFIG, batch_size, batches, epochs):
+def test_train_model(LOAD_CONFIG, batch_size, epochs):
     """Test that the model can be trained for one epoch."""
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
     load_confg["train_batch_size"] = batch_size
@@ -475,19 +490,24 @@ def test_train_model(LOAD_CONFIG, batch_size, batches, epochs):
     load_confg["temp_scheduler"] = None
     load_confg["num_epochs"] = epochs
 
+    # Load data config
+    data_cfg = OmegaConf.load(DATACONFIG_FILE)
+    load_dataconfg = OmegaConf.to_container(data_cfg)
+    load_dataconfg["train_params"]["batch_size"] = batch_size
+    load_dataconfg["test_params"]["batch_size"] = batch_size
+    cfg_data = config.DataConfig(**load_dataconfg)
+
     with tempfile.TemporaryDirectory() as dp:
         load_confg["save_dir"] = os.path.join(dp, load_confg["save_dir"])
         load_confg["log_dir"] = os.path.join(dp, load_confg["log_dir"])
         cfg = config.TrainConfig(**load_confg)
 
-        rng = jax.random.PRNGKey(cfg.seed)
-        rng, eval_rng = jax.random.split(rng)
-        input_shap_train = (cfg.train_batch_size,) + cfg.input_shape
-        input_shap_eval = (cfg.test_batch_size,) + cfg.input_shape
-        loader_train = utils.DummyDataLoader(rng, input_shap_train, batches, cfg.dtype)
-        loader_val = utils.DummyDataLoader(
-            eval_rng, input_shap_eval, batches, cfg.dtype
-        )
+        dataset_train_class = utils.DummyDataset(train=True, dtype=cfg.dtype, config=cfg_data)
+        dataset_test_class = utils.DummyDataset(train=False, dtype=cfg.dtype, config=cfg_data)
+
+        loader_train = utils.DataLoader(dataset_train_class, distributed=False)
+        loader_val = utils.DataLoader(dataset_test_class, distributed=False)
+
         model = training.TrainerVQGan(cfg)
         assert model is not None
         assert model.checkpoint_exists() is False
@@ -497,19 +517,12 @@ def test_train_model(LOAD_CONFIG, batch_size, batches, epochs):
         assert model.checkpoint_exists()
 
     # clean up
-    del model, cfg, load_confg, rng, loader_train, loader_val
-
-
-@pytest.mark.training_long
-def test_train_model_distriubuted(LOAD_CONFIG):
-    """Test that the model can be trained for one epoch."""
-    pass
+    del model, cfg, load_confg, loader_train, loader_val
 
 
 def test_simple_train_model(LOAD_CONFIG):
     """Test that the model can be trained for one epoch. Simple version"""
     batch_size = 2
-    batches = 2
     epochs = 1
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
     load_confg["train_batch_size"] = batch_size
@@ -518,19 +531,24 @@ def test_simple_train_model(LOAD_CONFIG):
     load_confg["temp_scheduler"] = None
     load_confg["num_epochs"] = epochs
 
+    # Load data config
+    data_cfg = OmegaConf.load(DATACONFIG_FILE)
+    load_dataconfg = OmegaConf.to_container(data_cfg)
+    load_dataconfg["train_params"]["batch_size"] = batch_size
+    load_dataconfg["test_params"]["batch_size"] = batch_size
+    cfg_data = config.DataConfig(**load_dataconfg)
+
     with tempfile.TemporaryDirectory() as dp:
         load_confg["save_dir"] = os.path.join(dp, load_confg["save_dir"])
         load_confg["log_dir"] = os.path.join(dp, load_confg["log_dir"])
         cfg = config.TrainConfig(**load_confg)
 
-        rng = jax.random.PRNGKey(cfg.seed)
-        rng, eval_rng = jax.random.split(rng)
-        input_shap_train = (cfg.train_batch_size,) + cfg.input_shape
-        input_shap_eval = (cfg.test_batch_size,) + cfg.input_shape
-        loader_train = utils.DummyDataLoader(rng, input_shap_train, batches, cfg.dtype)
-        loader_val = utils.DummyDataLoader(
-            eval_rng, input_shap_eval, batches, cfg.dtype
-        )
+        dataset_train_class = utils.DummyDataset(train=True, dtype=cfg.dtype, config=cfg_data)
+        dataset_test_class = utils.DummyDataset(train=False, dtype=cfg.dtype, config=cfg_data)
+
+        loader_train = utils.DataLoader(dataset_train_class, distributed=False)
+        loader_val = utils.DataLoader(dataset_test_class, distributed=False)
+
         model = training.TrainerVQGan(cfg)
         assert model is not None
         assert model.checkpoint_exists() is False
@@ -540,10 +558,4 @@ def test_simple_train_model(LOAD_CONFIG):
         assert model.checkpoint_exists()
 
     # clean up
-    del model, cfg, load_confg, rng, loader_train, loader_val
-
-
-@pytest.mark.training_long
-def test_model_with_hydra_config(LOAD_CONFIG):
-    """Test that the model can be trained for one epoch."""
-    pass
+    del model, cfg, load_confg, loader_train, loader_val

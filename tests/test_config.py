@@ -1,3 +1,4 @@
+import albumentations as A
 import jax
 import pytest
 from omegaconf import OmegaConf
@@ -192,3 +193,6 @@ def test_LoadConfig():
     cfg = config.LoadConfig(data=load_data_confg, train=load_train_confg)
     assert cfg.train.train_batch_size == cfg.data.train_params.batch_size
     assert cfg.train.test_batch_size == cfg.data.test_params.batch_size
+
+    # Test albumenation load
+    A.from_dict(cfg.data.transform) is not None

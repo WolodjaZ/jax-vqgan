@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -119,6 +119,8 @@ class TrainConfig:
         test_batch_size (optional, int): batch size for testing. Only informative.
         codebook_weight (float): weight for the codebook loss (Quantizer part).
         monitor (str): metric to monitor for saving best model.
+        recon_loss (str): reconstruction loss to use.
+        disc_loss (str): discriminator loss to use.
         disc_weight (float): weight for the discriminator loss.
         num_epochs (int): number of epochs to train.
         dtype (str): dtype to use for training.
@@ -147,6 +149,8 @@ class TrainConfig:
     test_batch_size: int
     codebook_weight: float
     monitor: str
+    recon_loss: str
+    disc_loss: str
     disc_weight: float
     num_epochs: int
     dtype: jnp.dtype
@@ -217,7 +221,9 @@ class DataConfig:
         test_params (DataParams): testing data parameters. Check DataParams for more details.
         dataset_name (str): name of the dataset to use. Currently only supports "voc".
         dataset_root (str): root directory of the dataset.
-        use_transforms (bool): whether to use transforms. Currently only supports horizontal flip.
+        transform (optional, dict): transform to apply to the dataset. Default None for no transf.
+            Transform dict comes from albumentations library. Check albumentations for more details.
+            Loading transform should proceed with albumentations.from_dict method.
         size (int): size of image width and height.
 
     """
@@ -226,7 +232,7 @@ class DataConfig:
     test_params: DataParams
     dataset_name: str = ""
     dataset_root: str = ""
-    use_transforms: bool = True
+    transform: Optional[Dict[str, Any]] = None
     size: int = 224
 
     def __post_init__(self):
