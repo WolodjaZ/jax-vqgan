@@ -130,7 +130,7 @@ def test_save_load_model(LOAD_CONFIG):
 
         # test the model saving
         model.init_optimizer()
-        model.save_model()
+        model.save_model(step=1)
         assert len(os.listdir(load_confg["save_dir"])) == 2
         assert len(os.listdir(os.path.join(load_confg["save_dir"], f"{cfg.model_name}"))) > 0
         assert len(os.listdir(os.path.join(load_confg["save_dir"], f"{cfg.model_name}_disc"))) > 0
@@ -160,6 +160,7 @@ def test_save_load_model(LOAD_CONFIG):
             )
         )
         assert model_new.state_disc.tx is not None
+        assert model_new.start_step == 1
 
     del model, cfg, load_confg, model_new
 
@@ -326,10 +327,10 @@ def test_eval_step(LOAD_CONFIG):
     "use_scheduler, batch_size, num_steps_disc_start",
     [
         (False, 2, 2),
-        #        (False, 2, 1),
-        #        (False, 4, 2),
-        #        (False, 2, 2),
-        #        (True, 2, 2),
+        (False, 2, 1),
+        (False, 4, 2),
+        (False, 2, 2),
+        (True, 2, 2),
     ],
 )
 def test_train_epoch(LOAD_CONFIG, use_scheduler, batch_size, num_steps_disc_start):

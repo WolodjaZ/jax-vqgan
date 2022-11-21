@@ -56,12 +56,6 @@ repos:
             args: ["mypy"]
             language: system
             pass_filenames: false
-        -   id: cover
-            name: cover
-            entry: invoke
-            args: ["coverage"]
-            language: system
-            pass_filenames: false
         -   id: clean
             name: clean
             entry: invoke

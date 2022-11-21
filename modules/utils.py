@@ -25,6 +25,23 @@ def set_seed(seed: int) -> None:
     tf.random.set_seed(seed)
 
 
+def post_processing(image: np.ndarray) -> np.ndarray:
+    """Post processing for image.
+    un standarize image and multiply by 255.
+    Next clip values to [0, 255] and convert to uint8.
+    Args:
+        image (np.ndarray): image to post process.
+
+    Returns:
+        np.ndarray: post processed image.
+    """
+    image = image * IMAGENET_STANDARD_STD + IMAGENET_STANDARD_MEAN
+    image *= 255.0
+    image = np.clip(image, 0.0, 255.0)
+    image = image.astype(np.uint8)
+    return image
+
+
 class BaseDataset(ABC):
     """Load the dataset. Abstract method."""
 
@@ -124,6 +141,13 @@ class TensorflowDataset(BaseDataset):
             train: If the dataset is for training.
         Returns:
             tf.data.Dataset: The dataset."""
+
+        # if you get error 'Too many open files' one can resolve it doing what this issue proposed
+        # https://github.com/tensorflow/datasets/issues/1441#issuecomment-581660890
+        # Below is the code to resolve it
+        # import resource
+        # low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
+        # resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
         split = "train" if train else "test"
         ds = tfds.load(
             name=self.dataset_name, split=split, as_supervised=True, data_dir=self.root

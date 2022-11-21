@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import optax
 import tensorflow as tf
 from flax.core.frozen_dict import FrozenDict
-from flax.training import train_state
+from flax.training import checkpoints, train_state
 from tqdm.auto import tqdm
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
 
@@ -51,6 +51,7 @@ class TrainerModule:
             tx=None,
             opt_state=None,
         )
+        self.start_step = 0
 
         # Prepare logging
         self.log_dir: str = os.path.join(self.module_config.log_dir, f"{self.model_name}/")
@@ -88,7 +89,7 @@ class TrainerModule:
         logger.info("Starting training 💃")
         best_eval = None
         with self.logger.as_default():
-            for epoch_idx in range(1, self.module_config.num_epochs + 1):
+            for epoch_idx in range(1 + self.start_step, self.module_config.num_epochs + 1):
                 logger.info("Epoch: %d", epoch_idx)
                 train_metrics = self.train_epoch(train_loader, epoch=epoch_idx)
                 for key in train_metrics:
@@ -100,7 +101,7 @@ class TrainerModule:
                         tf.summary.scalar(f"val/{key}", eval_metrics[key], step=epoch_idx)
                     if best_eval is None or eval_metrics[self.eval_key] > best_eval:
                         best_eval = eval_metrics[self.eval_key]
-                        self.save_model()
+                        self.save_model(epoch_idx)
 
                 self.logger.flush()
         logger.info("Finished training ✅ with best eval metric: %f 😎", best_eval)
@@ -190,25 +191,52 @@ class TrainerModule:
         metrics = {key: metrics[key] / count for key in metrics}
         return metrics
 
-    def save_model(self, hub=False):
-        """Save current model."""
-        if hub:
-            self.model.save_pretrained(
-                self.save_dir,
-                push_to_hub=True,
-                commit_message="Saving weights and logs",
-            )
-        else:
-            self.model.save_pretrained(self.save_dir)
+    def save_model(self, step: Optional[int] = None):
+        """Save current model.
+        Args:
+            step (int, optional): Current step. Defaults to None.
+        """
+        step = step if step is not None else self.module_config.num_epochs
+        logger.info("Saving model 📠🧠 for step %d", step)
+        checkpoints.save_checkpoint(
+            ckpt_dir=self.save_dir,
+            target={"state": self.state, "step": step, "rng": self.main_rng},
+            step=step,
+            overwrite=True,
+        )
+
+    def push_model_to_hub(
+        self, repo_id: str, commit_message: str = "Saving weights and logs"
+    ) -> None:
+        """Push model to huggingface hub.
+        Args:
+            repo_id (str): Repository id to push to Hugging Face.
+            commit_message (str, optional): Commit message. Defaults to "Saving weights and logs".
+        """
+        logger.info("Pushing model to Hugging Face Hub 🚀")
+        self.model.push_to_hub(
+            repo_id=repo_id,
+            commit_message=commit_message,
+        )
 
     def load_model(self):
         """Load model."""
-        self.model = self.model_class.from_pretrained(self.save_dir)
-        self.state = train_state.TrainState.create(
+        logger.info("Loading model 🧠")
+        load_dict = checkpoints.restore_checkpoint(ckpt_dir=self.save_dir, target=None)
+        state_dict = load_dict["state"]
+        self.state = train_state.TrainState(
             apply_fn=self.state.apply_fn,
-            params=self.model.params,
+            params=state_dict["params"],
+            step=state_dict["step"],
             tx=self.state.tx if self.state.tx else self.module_config.optimizer,
+            opt_state=state_dict["opt_state"],
         )
+        self.main_rng = load_dict["rng"]
+        self.model.params = self.state.params
+        if load_dict["step"] is not None:
+            self.start_step = load_dict["step"]
+            if self.start_step >= self.module_config.num_epochs:
+                logger.info("Model is already trained 🎉")
 
     def checkpoint_exists(self) -> bool:
         """Check whether a pretrained model exist.
@@ -233,25 +261,20 @@ class TrainStateDisc(train_state.TrainState):
 
 
 class TrainerVQGan(TrainerModule):
-    """Helper functions for training VQGAN.
-    Arguments:
-        recon_loss_fn (Callable): Reconstruction loss function. Defaults to l1 loss.
-        disc_loss_fn (Callable): Discriminator loss function. Defaults to hinge.
-    """
-
-    recon_loss_fn: Callable = losses.l1_loss
-    disc_loss_fn: Callable = losses.disc_loss_hinge
+    """Helper functions for training VQGAN."""
 
     def __init__(self, module_config: config.TrainConfig):
         # Initialize parent class
         self.module_config = module_config
         self.model_name = self.module_config.model_name
         if self.module_config.recon_loss == "l2":
-            TrainerVQGan.recon_loss_fn = losses.l2_loss
+            self.recon_loss_fn = losses.l2_loss
         elif self.module_config.recon_loss == "l1":
-            TrainerVQGan.recon_loss_fn = losses.l1_loss
+            self.recon_loss_fn = losses.l1_loss
         elif self.module_config.recon_loss == "combo":
-            TrainerVQGan.recon_loss_fn = losses.combo_loss
+            self.recon_loss_fn = losses.combo_loss
+        elif self.module_config.recon_loss == "mape":
+            self.recon_loss_fn = losses.mape_loss
         else:
             logger.warning(
                 f"""Reconstruction loss function {self.module_config.recon_loss} not supported.
@@ -262,9 +285,9 @@ class TrainerVQGan(TrainerModule):
             self.module_config.disc_hparams
         )
         if self.module_config.disc_loss == "vanilla":
-            TrainerVQGan.disc_loss_fn = losses.disc_loss_vanilla
+            self.disc_loss_fn = losses.disc_loss_vanilla
         elif self.module_config.disc_loss == "hinge":
-            TrainerVQGan.disc_loss_fn = losses.disc_loss_hinge
+            self.disc_loss_fn = losses.disc_loss_hinge
         else:
             logger.warning(
                 f"""Discriminator loss function {self.module_config.disc_loss} not supported.
@@ -326,21 +349,31 @@ class TrainerVQGan(TrainerModule):
             tx=optimizer_disc,
         )
 
-    def save_model(self):
-        """Save current model."""
-        super().save_model()
-        self.model_disc.save_pretrained(self.save_dir_disc)
+    def save_model(self, step: Optional[int] = None):
+        """Save current model.
+        Args:
+            step (int, optional): Current step. Defaults to None.
+        """
+        step = step if step is not None else self.module_config.num_epochs
+        super().save_model(step=step)
+        checkpoints.save_checkpoint(
+            ckpt_dir=self.save_dir_disc, target=self.state_disc, step=step, overwrite=True
+        )
 
     def load_model(self):
         """Load model."""
         super().load_model()
-        self.model_disc = self.model_disc.from_pretrained(self.save_dir_disc)
-        self.state_disc = TrainStateDisc.create(
+        state_dict = checkpoints.restore_checkpoint(ckpt_dir=self.save_dir_disc, target=None)
+        self.state_disc = TrainStateDisc(
             apply_fn=self.state_disc.apply_fn,
-            params=self.model_disc.params["params"],
-            batch_stats=self.model_disc.params["batch_stats"],
+            params=state_dict["params"],
+            batch_stats=state_dict["batch_stats"],
+            step=state_dict["step"],
             tx=self.state_disc.tx if self.state_disc.tx else self.module_config.optimizer_disc,
+            opt_state=state_dict["opt_state"],
         )
+        self.model_disc.params["params"] = self.state_disc.params
+        self.model_disc.params["batch_stats"] = self.state_disc.batch_stats
 
     def checkpoint_exists(self) -> bool:
         """Check whether a pretrained model exist.
@@ -414,6 +447,8 @@ class TrainerVQGan(TrainerModule):
 
     def create_functions(self):
         """Create training and eval functions."""
+        recon_loss_fn: Callable = self.recon_loss_fn
+        disc_loss_fn: Callable = self.disc_loss_fn
 
         def calculate_loss_autoencoder(
             params: FrozenDict[str, Any],
@@ -437,7 +472,7 @@ class TrainerVQGan(TrainerModule):
             )
             x_recon, z_q, codebook_loss, indices = outs
             # for now we will use l1 loss than it will be combined with perceptual loss
-            rec_loss = TrainerVQGan.recon_loss_fn(x_recon, batch)
+            rec_loss = recon_loss_fn(x_recon, batch)
             nll_loss = jnp.mean(rec_loss)
 
             # Generator loss (autoencode)
@@ -503,7 +538,7 @@ class TrainerVQGan(TrainerModule):
             disc_factor = jax.lax.cond(
                 disc_use, lambda _: self.module_config.disc_weight, lambda _: 0.0, None
             )
-            loss = disc_factor * TrainerVQGan.disc_loss_fn(logits_real, logits_fake)
+            loss = disc_factor * disc_loss_fn(logits_real, logits_fake)
             metrics = {
                 "disc_loss": loss,
                 "logits_real": logits_real.mean(),

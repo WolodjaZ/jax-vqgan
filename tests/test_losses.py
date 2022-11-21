@@ -24,6 +24,8 @@ def JAX_PRNG() -> Tuple[jax.random.PRNGKey, jnp.dtype]:
         (losses.l1_loss, 8),
         (losses.combo_loss, 4),
         (losses.combo_loss, 8),
+        (losses.mape_loss, 4),
+        (losses.mape_loss, 8),
     ],
 )
 def test_reconstruction_loss(JAX_PRNG, loss_fn: Callable, test_numbs: int):

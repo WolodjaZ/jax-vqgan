@@ -37,6 +37,17 @@ def combo_loss(predictions: jnp.ndarray, targets: jnp.ndarray) -> jnp.ndarray:
     return jnp.where(l2 < 0.5, l1, l2)
 
 
+def mape_loss(predictions: jnp.ndarray, targets: jnp.ndarray) -> jnp.ndarray:
+    """Compute mean absolute percentage error loss.
+    Args:
+        predictions (jnp.ndarray): Predictions from the model.
+        targets (jnp.ndarray): Targets for the model.
+    Returns:
+        Reconstruction loss (jnp.ndarray).
+    """
+    return jnp.abs((targets - predictions) / targets)
+
+
 def disc_loss_vanilla(real: jnp.ndarray, fake: jnp.ndarray) -> jnp.ndarray:
     """Compute discriminator loss for vanilla GAN.
     Wrong fake logits impact more the loss than the bad real logits.

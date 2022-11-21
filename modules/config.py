@@ -119,8 +119,8 @@ class TrainConfig:
         test_batch_size (optional, int): batch size for testing. Only informative.
         codebook_weight (float): weight for the codebook loss (Quantizer part).
         monitor (str): metric to monitor for saving best model.
-        recon_loss (str): reconstruction loss to use.
-        disc_loss (str): discriminator loss to use.
+        recon_loss (str): reconstruction loss to use. Can be one of `l1`, `l2`, `comb`, `mape`.
+        disc_loss (str): discriminator loss to use. Can be `vanilla` or `hinge`.
         disc_weight (float): weight for the discriminator loss.
         num_epochs (int): number of epochs to train.
         dtype (str): dtype to use for training.
