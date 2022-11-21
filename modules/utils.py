@@ -1,6 +1,8 @@
+import random
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
+import albumentations as A
 import flax
 import jax
 import jax.numpy as jnp
@@ -16,49 +18,11 @@ IMAGENET_STANDARD_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STANDARD_STD = [0.229, 0.224, 0.225]
 
 
-class DummyDataLoader:
-    """A dummy data loader.
-    Create dummy data of given shape and batches.
-    End simulates pytorch dataloader.
-    """
-
-    def __init__(
-        self,
-        rng: jax.random.PRNGKey,
-        dataset_shape: Tuple[int, int, int, int],
-        batches: int,
-        dtype: jnp.dtype,
-    ) -> None:
-        """Create a dummy data loader.
-        Args:
-            rng: Random number generator for creating random data.
-            dataset_shape: Shape of the dataset.
-            batches: Number of batches to create.
-        """
-        self.batches = batches
-        self.dataset = jax.random.normal(rng, (batches,) + dataset_shape, dtype=dtype)
-
-    def __len__(self) -> int:
-        """Return the number of batches.
-        Returns:
-            int: Number of batches.
-        """
-        return self.batches
-
-    def __iter__(self):
-        """Return the iterator."""
-        self._numb = 0
-        return self
-
-    def __next__(self) -> jnp.ndarray:
-        """Return the next batch."""
-        if self.batches > self._numb:
-            i = self._numb
-            self._numb += 1
-            data = self.dataset[i]
-            return data
-        else:
-            raise StopIteration
+def set_seed(seed: int) -> None:
+    """Set seed for random operations."""
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
 
 
 class BaseDataset(ABC):
@@ -71,7 +35,10 @@ class BaseDataset(ABC):
             config: The config for the dataset.
         """
         self.root: str = config.dataset_root
-        self.use_transforms: bool = config.use_transforms
+        self.use_transforms: bool = True if train else False
+        if self.use_transforms and config.transform is None:
+            raise ValueError("Transforms must be provided for training.")
+        self.transforms = A.from_dict(config.transform)
         self.image_size: int = config.size
         self.dataset_name = config.dataset_name
         self.dtype = dtype
@@ -99,9 +66,22 @@ class BaseDataset(ABC):
         Returns:
             tf.Tensor: The preprocessed image.
         """
+
+        def aug_fn(image: tf.Tensor) -> tf.Tensor:
+            data = {"image": image}
+            aug_data = self.transforms(**data)
+            aug_img = aug_data["image"]
+            aug_img = tf.cast(aug_img, self.dtype) / 255.0
+            aug_img = (aug_img - IMAGENET_STANDARD_MEAN) / IMAGENET_STANDARD_STD
+            aug_img = tf.image.resize(aug_img, (self.image_size, self.image_size))
+            return aug_img
+
         if self.use_transforms:
-            image = tf.image.random_flip_left_right(image)
-        image = tf.image.resize(image, (self.image_size, self.image_size))
+            image = tf.numpy_function(func=aug_fn, inp=[image], Tout=self.dtype)
+        else:
+            image = tf.cast(image, self.dtype) / 255.0
+            image = (image - IMAGENET_STANDARD_MEAN) / IMAGENET_STANDARD_STD
+            image = tf.image.resize(image, (self.image_size, self.image_size))
         return image
 
     def get_dataset(self) -> tf.data.Dataset:
@@ -110,11 +90,7 @@ class BaseDataset(ABC):
             tf.data.Dataset: The dataset.
         """
         dataset = self.dataset.map(self._preprocess)
-        dataset = (
-            dataset.shuffle(self.params.batch_size * 16)
-            if self.params.shuffle
-            else dataset
-        )
+        dataset = dataset.shuffle(self.params.batch_size * 16) if self.params.shuffle else dataset
         return dataset
 
 
@@ -127,11 +103,15 @@ class DummyDataset(BaseDataset):
             train: If the dataset is for training.
         Returns:
             tf.data.Dataset: The dataset."""
-        dummy = tf.random.normal(
-            (self.params.batch_size * 4, self.image_size, self.image_size, 3),
-            dtype=self.dtype,
-        )
+        dummy = (
+            tf.random.normal(
+                (self.params.batch_size * 4, self.image_size, self.image_size, 3),
+                dtype=tf.float32,
+            )
+            * 255.0
+        )  # 0-255
         ds = tf.data.Dataset.from_tensor_slices(dummy)
+        self.dataset_name = "dummy"
         return ds.cache()
 
 
@@ -147,8 +127,8 @@ class TensorflowDataset(BaseDataset):
         split = "train" if train else "test"
         ds = tfds.load(
             name=self.dataset_name, split=split, as_supervised=True, data_dir=self.root
-        )
-        return ds.map(lambda x, y: tf.cast(x, self.dtype)).cache()
+        ).map(tf.autograph.experimental.do_not_convert(lambda x, y: x))
+        return ds.cache()
 
 
 class DataLoader:
@@ -165,14 +145,11 @@ class DataLoader:
 
     def __len__(self) -> int:
         """Return the length of the dataset."""
-        return (
-            len(self.dataset_placeholder) // self.dataset_placeholder.params.batch_size
-        )
+        return len(self.dataset_placeholder) // self.dataset_placeholder.params.batch_size
 
     def __call__(self, *args: Any, **kwds: Any) -> Iterable:
         """Return the dataset in dataloader style."""
         ds = self.dataset_placeholder.get_dataset()
-        print(len(ds))
         batch_size = self.dataset_placeholder.params.batch_size
         if self.dist:
             per_core_bs, remainder = divmod(batch_size, len(jax.devices()))
@@ -246,9 +223,7 @@ class VQGanImageProcessor:
         self.size = size
         self.resample = resample
         self.rescale_factor = rescale_factor
-        self.image_mean = (
-            image_mean if image_mean is not None else IMAGENET_STANDARD_MEAN
-        )
+        self.image_mean = image_mean if image_mean is not None else IMAGENET_STANDARD_MEAN
         self.image_std = image_std if image_std is not None else IMAGENET_STANDARD_STD
 
     def resize(
@@ -294,9 +269,7 @@ class VQGanImageProcessor:
                 image = np.transpose(image, (1, 2, 0))
 
         pil_image = Image.fromarray(np.uint8(image))
-        pil_image_resized = pil_image.resize(
-            (size["width"], size["height"]), resample=resample
-        )
+        pil_image_resized = pil_image.resize((size["width"], size["height"]), resample=resample)
         image_np = np.array(pil_image_resized)
         assert image_np.shape == (size["height"], size["width"], image.shape[-1])
         image_np = np.transpose(image_np, (2, 0, 1)) if revert_format else image_np
@@ -367,9 +340,7 @@ class VQGanImageProcessor:
 
         image_normalized = (image - mean) / std
         image_normalized = (
-            np.transpose(image_normalized, (2, 0, 1))
-            if revert_format
-            else image_normalized
+            np.transpose(image_normalized, (2, 0, 1)) if revert_format else image_normalized
         )
         return image_normalized
 
@@ -423,9 +394,7 @@ class VQGanImageProcessor:
         do_rescale = do_rescale if do_rescale is not None else self.do_rescale
         do_normalize = do_normalize if do_normalize is not None else self.do_normalize
         resample = resample if resample is not None else self.resample
-        rescale_factor = (
-            rescale_factor if rescale_factor is not None else self.rescale_factor
-        )
+        rescale_factor = rescale_factor if rescale_factor is not None else self.rescale_factor
         image_mean = image_mean if image_mean is not None else self.image_mean
         image_std = image_std if image_std is not None else self.image_std
 
@@ -439,9 +408,7 @@ class VQGanImageProcessor:
 
         # if needed to rescale the image
         for img in images:
-            assert (
-                img.min() >= 0 and img.max() <= 255
-            ), "Image values must be in [0 - 255] range."
+            assert img.min() >= 0 and img.max() <= 255, "Image values must be in [0 - 255] range."
 
         if do_resize and size is None:
             raise ValueError("Size must be specified if do_resize is True.")
@@ -450,20 +417,14 @@ class VQGanImageProcessor:
             raise ValueError("Rescale factor must be specified if do_rescale is True.")
 
         if do_resize:
-            images = [
-                self.resize(image=image, size=size, resample=resample)
-                for image in images
-            ]
+            images = [self.resize(image=image, size=size, resample=resample) for image in images]
 
         if do_rescale:
-            images = [
-                self.rescale(image=image, scale=rescale_factor) for image in images
-            ]
+            images = [self.rescale(image=image, scale=rescale_factor) for image in images]
 
         if do_normalize:
             images = [
-                self.normalize(image=image, mean=image_mean, std=image_std)
-                for image in images
+                self.normalize(image=image, mean=image_mean, std=image_std) for image in images
             ]
 
         if data_format == "channels_first":

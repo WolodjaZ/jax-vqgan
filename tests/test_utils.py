@@ -1,3 +1,4 @@
+# flake8: noqa: E401
 import tempfile
 from typing import Tuple
 
@@ -5,7 +6,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-import tensorflow as tf
+import tensorflow as tf  # noqa: E401
+from jax.tree_util import tree_all, tree_map
 from omegaconf import OmegaConf
 from PIL import Image
 
@@ -23,6 +25,13 @@ def JAX_PRNG() -> Tuple[jax.random.PRNGKey, jnp.dtype]:
 
 
 def create_img(rng: jax.random.PRNGKey, reverted: bool) -> np.ndarray:
+    """Create a random image.
+    Args:
+        rng (jax.random.PRNGKey): random number generator.
+        reverted (bool): if True, image format is (C, H, W), else (H, W, C).
+    Returns:
+        image (np.ndarray): random image.
+    """
     image = jax.random.normal(rng, (224, 224, 3))
     if reverted:
         jnp.transpose(image, (2, 0, 1))
@@ -31,73 +40,47 @@ def create_img(rng: jax.random.PRNGKey, reverted: bool) -> np.ndarray:
     return np.uint8(np.asarray(image))
 
 
-@pytest.mark.parametrize(
-    "batch_size, batches",
-    [
-        (8, 12),
-        (1, 12),
-        (8, 1),
-    ],
-)
-def test_DummyDataLoader(JAX_PRNG, batch_size, batches):
-    """Test the dummy data loader works like DataLoader from Pytorch."""
-    rng, dtype = JAX_PRNG
-
-    input_shape = (batch_size, 256, 256, 3)
-    loader = utils.DummyDataLoader(rng, input_shape, batches, dtype=dtype)
-
-    assert len(loader) == batches
-    assert loader.dataset.dtype == dtype
-    in_loop = 0
-    for i, loader_batch in enumerate(loader):
-        assert loader_batch.shape == input_shape
-        assert loader_batch.dtype == dtype
-        assert i < len(loader)
-        in_loop += 1
-    assert in_loop == len(loader)
-
-    in_loop = 0
-    for i, loader_batch in enumerate(loader):
-        assert loader_batch.shape == input_shape
-        assert loader_batch.dtype == dtype
-        assert i < len(loader)
-        in_loop += 1
-    assert in_loop == batches
-
-    # clean up
-    del loader
+def test_seed():
+    """Test the seed function."""
+    utils.set_seed(42)
+    assert tree_all(
+        tree_map(lambda x, y: (x == y).all(), jax.random.PRNGKey(42), jax.random.PRNGKey(42))
+    )
 
 
 def test_DummyDataset(mocker):
     """Test the DummyDataset."""
     # load test data config
-    tf.random.set_seed(seed=42)
+    utils.set_seed(42)
     dtype = jnp.float32
-    mocker.patch(
-        "modules.utils.tf.image.random_flip_left_right", side_effect=lambda x: x
-    )
     cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
     load_confg = OmegaConf.to_container(cfg_omgega)
     cfg = config.DataConfig(**load_confg)
 
     # Train dataset
     dataset_train_class = utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+    mock_transform = mocker.patch.object(
+        dataset_train_class, "transforms", side_effect=lambda image: {"image": image}
+    )
     assert issubclass(type(dataset_train_class), utils.BaseDataset)
     dataset_train = dataset_train_class.get_dataset()
-    utils.tf.image.random_flip_left_right.assert_called_once()
     dataset_train = dataset_train.as_numpy_iterator()
     data = next(dataset_train)
+    mock_transform.assert_called()
     assert data.shape == (cfg.size, cfg.size, 3)
     assert data.dtype == jnp.float32
 
     # Test dataset
     cfg.use_transforms = False
     dataset_test_class = utils.DummyDataset(train=False, dtype=dtype, config=cfg)
+    mock_transform = mocker.patch.object(
+        dataset_test_class, "transforms", side_effect=lambda image: {"image": image}
+    )
     assert issubclass(type(dataset_test_class), utils.BaseDataset)
     dataset_test = dataset_test_class.get_dataset()
-    utils.tf.image.random_flip_left_right.assert_called_once()
     dataset_test = dataset_test.as_numpy_iterator()
     data = next(dataset_test)
+    mock_transform.assert_not_called()
     assert data.shape == (cfg.size, cfg.size, 3)
     assert data.dtype == jnp.float32
 
@@ -107,24 +90,34 @@ def test_DummyDataset(mocker):
 
 def test_reproducibility_Dataset(mocker):
     # load test data config
-    import tensorflow as tf
+    import random  # noqa: F811, E401
 
-    tf.random.set_seed(seed=42)
+    import numpy as np  # noqa: F811, E401
+    import tensorflow as tf  # noqa: F811, E401
+
+    seed = 42
+    utils.set_seed(seed)
     dtype = jnp.float32
-    mocker.patch(
-        "modules.utils.tf.image.random_flip_left_right", side_effect=lambda x: x
-    )
     cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
     load_confg = OmegaConf.to_container(cfg_omgega)
     cfg = config.DataConfig(**load_confg)
 
     dataset_train_class = utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+    mocker.patch.object(
+        dataset_train_class, "transforms", side_effect=lambda image: {"image": image}
+    )
     dataset_first = dataset_train_class.get_dataset().as_numpy_iterator()
 
-    import tensorflow as tf
+    import random  # noqa: F811, E401
 
-    tf.random.set_seed(seed=42)
+    import numpy as np  # noqa: F811, E401
+    import tensorflow as tf  # noqa: F811, E401
+
+    utils.set_seed(seed)
     dataset_train_class = utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+    mocker.patch.object(
+        dataset_train_class, "transforms", side_effect=lambda image: {"image": image}
+    )
     dataset_second = dataset_train_class.get_dataset().as_numpy_iterator()
 
     for _ in range(3):
@@ -137,14 +130,11 @@ def test_reproducibility_Dataset(mocker):
     del dataset_first, dataset_second, cfg_omgega, load_confg, cfg
 
 
-def test_TensorflowDataset(mocker):
+def test_TensorflowDataset():
     """Test the TensorflowDataset."""
     # load test data config
-    tf.random.set_seed(seed=42)
+    utils.set_seed(42)
     dtype = jnp.float32
-    mocker.patch(
-        "modules.utils.tf.image.random_flip_left_right", side_effect=lambda x: x
-    )
     cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
     load_confg = OmegaConf.to_container(cfg_omgega)
     load_confg["dataset_name"] = "cifar10"
@@ -153,12 +143,9 @@ def test_TensorflowDataset(mocker):
         cfg = config.DataConfig(**load_confg)
 
         # Train dataset
-        dataset_train_class = utils.TensorflowDataset(
-            train=True, dtype=dtype, config=cfg
-        )
+        dataset_train_class = utils.TensorflowDataset(train=True, dtype=dtype, config=cfg)
         assert issubclass(type(dataset_train_class), utils.BaseDataset)
         dataset_train = dataset_train_class.get_dataset()
-        utils.tf.image.random_flip_left_right.assert_called_once()
         dataset_train = dataset_train.as_numpy_iterator()
         data = next(dataset_train)
         assert data.shape == (cfg.size, cfg.size, 3)
@@ -166,12 +153,9 @@ def test_TensorflowDataset(mocker):
 
         # Test dataset
         cfg.use_transforms = False
-        dataset_test_class = utils.TensorflowDataset(
-            train=False, dtype=dtype, config=cfg
-        )
+        dataset_test_class = utils.TensorflowDataset(train=False, dtype=dtype, config=cfg)
         assert issubclass(type(dataset_test_class), utils.BaseDataset)
         dataset_test = dataset_test_class.get_dataset()
-        utils.tf.image.random_flip_left_right.assert_called_once()
         dataset_test = dataset_test.as_numpy_iterator()
         data = next(dataset_test)
         assert data.shape == (cfg.size, cfg.size, 3)
@@ -184,7 +168,7 @@ def test_TensorflowDataset(mocker):
 def test_DataLoader():
     """Test the DataLoader."""
     # load test data config
-    tf.random.set_seed(seed=42)
+    utils.set_seed(42)
     dtype = jnp.float32
     cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
     load_confg = OmegaConf.to_container(cfg_omgega)
@@ -231,9 +215,7 @@ def test_resize_VQGanImageProcessor():
     input_resized = extractor.resize(input, size={"width": 512, "height": 512})
     assert input_resized.shape == (512, 512, 3)
     input_reverted = np.ones((3, 256, 256))
-    input_reverted_resized = extractor.resize(
-        input_reverted, size={"width": 512, "height": 512}
-    )
+    input_reverted_resized = extractor.resize(input_reverted, size={"width": 512, "height": 512})
     assert input_reverted_resized.shape == (3, 512, 512)
 
 
@@ -331,9 +313,7 @@ def test_preprocess(pil_img, list_of_images, reverted_channels):
     input_preprocessed = input_preprocessed["pixel_values"]
     assert input_preprocessed[0].shape == (256, 256, 3)
     assert input_preprocessed[0].mean() == pytest.approx(0.0, abs=0.3)
-    input_preprocessed = extractor.preprocess(
-        images, do_rescale=True, rescale_factor=1.0
-    )
+    input_preprocessed = extractor.preprocess(images, do_rescale=True, rescale_factor=1.0)
     assert "pixel_values" in input_preprocessed
     input_preprocessed = input_preprocessed["pixel_values"]
     assert input_preprocessed[0].shape == (256, 256, 3)
@@ -458,9 +438,7 @@ def test_pipeline_sizes(size_img):
     images = [create_img(rng, False) for rng in rngs]
 
     # Extractor
-    extractor = utils.VQGanFeatureExtractor(
-        size={"width": size_img, "height": size_img}
-    )
+    extractor = utils.VQGanFeatureExtractor(size={"width": size_img, "height": size_img})
     input_preprocessed = extractor(images)
     assert input_preprocessed is not None
     assert "pixel_values" in input_preprocessed

@@ -2,47 +2,64 @@ import jax
 import jax.numpy as jnp
 
 
-def reconstruction_loss(
-    predictions: jnp.ndarray, targets: jnp.ndarray, type: str = "l1"
-) -> jnp.ndarray:
-    """Compute reconstruction loss.
+def l2_loss(predictions: jnp.ndarray, targets: jnp.ndarray) -> jnp.ndarray:
+    """Compute L2 loss.
     Args:
-        predictions: Predictions from the model.
-        targets: Targets for the model.
-        type: Type of loss to use. Currently only supports "l2" and "l1".
+        predictions (jnp.ndarray): Predictions from the model.
+        targets (jnp.ndarray): Targets for the model.
     Returns:
-        Reconstruction loss.
+        Reconstruction loss (jnp.ndarray).
     """
-    if type == "l2":
-        return (predictions - targets) ** 2
-    elif type == "l1":
-        return jnp.abs(predictions - targets)
-    elif type == "combo":  # TODO optimize this
-        l1 = predictions - targets
-        l2 = (predictions - targets) ** 2
-        return jnp.where(l2 < 0.5, l1, l2)
-    else:
-        raise ValueError(f"Unknown loss type: {type}")
+    return (predictions - targets) ** 2
 
 
-def disc_loss(real: jnp.ndarray, fake: jnp.ndarray, type: str = "hinge") -> float:
-    """Compute discriminator loss.
+def l1_loss(predictions: jnp.ndarray, targets: jnp.ndarray) -> jnp.ndarray:
+    """Compute L1 loss.
     Args:
-        predictions: Predictions from the model.
-        targets: Targets for the model.
-        type: Type of loss to use. Currently only supports "vanilla" and "hinge".
+        predictions (jnp.ndarray): Predictions from the model.
+        targets (jnp.ndarray): Targets for the model.
     Returns:
-        Discriminator loss.
+        Reconstruction loss (jnp.ndarray).
     """
-    if type == "hinge":
-        """Hinge loss. real and fake logits influence the loss the same."""
-        real_loss = jnp.mean(jnp.maximum(1.0 - real, 0.0))
-        loss_fake = jnp.mean(jnp.maximum(1.0 + fake, 0.0))
-        return 0.5 * (real_loss + loss_fake)
-    elif type == "vanilla":
-        """Vanilla loss. Wrong fake logits impact more the loss than the bad real logits."""
-        real_loss = jnp.mean(jax.nn.softplus(-real))
-        generated_loss = jnp.mean(jax.nn.softplus(fake))
-        return 0.5 * (real_loss + generated_loss)
-    else:
-        raise ValueError(f"Unknown loss type: {type}")
+    return jnp.abs(predictions - targets)
+
+
+def combo_loss(predictions: jnp.ndarray, targets: jnp.ndarray) -> jnp.ndarray:
+    """Compute combined l1 and l2 loss : l1 if l2 < 0.5 else l2.
+    Args:
+        predictions (jnp.ndarray): Predictions from the model.
+        targets (jnp.ndarray): Targets for the model.
+    Returns:
+        Reconstruction loss (jnp.ndarray).
+    """
+    l1 = predictions - targets
+    l2 = (predictions - targets) ** 2
+    return jnp.where(l2 < 0.5, l1, l2)
+
+
+def disc_loss_vanilla(real: jnp.ndarray, fake: jnp.ndarray) -> jnp.ndarray:
+    """Compute discriminator loss for vanilla GAN.
+    Wrong fake logits impact more the loss than the bad real logits.
+    Args:
+        real: Real images, received from dataset.
+        fake: Fake images, produced by generator.
+    Returns:
+        Discriminator loss (jnp.ndarray).
+    """
+    real_loss = jnp.mean(jax.nn.softplus(-real))
+    generated_loss = jnp.mean(jax.nn.softplus(fake))
+    return 0.5 * (real_loss + generated_loss)
+
+
+def disc_loss_hinge(real: jnp.ndarray, fake: jnp.ndarray) -> jnp.ndarray:
+    """Compute discriminator loss for hinge GAN.
+    Real and fake logits influence the loss the same.
+    Args:
+        real: Real images, received from dataset.
+        fake: Fake images, produced by generator.
+    Returns:
+        Discriminator loss (jnp.ndarray).
+    """
+    real_loss = jnp.mean(jnp.maximum(1.0 - real, 0.0))
+    loss_fake = jnp.mean(jnp.maximum(1.0 + fake, 0.0))
+    return 0.5 * (real_loss + loss_fake)

@@ -1,7 +1,7 @@
 import nox
 
 SUPPORTED_PY_VERSIONS = ["3.8", "3.9", "3.10"]
-nox.options.sessions = ["test", "test_extended", "lint", "coverage", "mypy", "docs"]
+nox.options.sessions = ["test", "test_extended", "lint", "coverage", "mypy", "docs", "lint_nb"]
 
 
 def _deps(session: nox.Session) -> None:
@@ -84,6 +84,20 @@ def lint(session: nox.Session) -> None:
         "--statistics",
         "--max-line-length=100",
     )
+
+
+@nox.session(python=SUPPORTED_PY_VERSIONS)
+def lint_nb(session: nox.Session) -> None:
+    """Lint notebooks."""
+    _deps(session)
+    session.install(
+        "flake8==5.0.4", "black==22.3.0", "isort==5.10.1", "nbqa==1.1.0", "nbconvert==7.2.5"
+    )
+    """Run mypy."""
+    session.run("nbqa", "black", "notebooks")
+    session.run("nbqa", "flake8", "--max-line-length=100", "notebooks")
+    session.run("nbqa", "isort", "notebooks")
+    session.run("jupyter", "nbconvert", "--clear-output", "--inplace", "notebooks/*.ipynb")
 
 
 @nox.session(python=SUPPORTED_PY_VERSIONS)

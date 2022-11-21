@@ -11,9 +11,10 @@ def help(c):
     print("  - venv: Create a virtual environment.")
     print("  - clean: Clean all unnecessary files.")
     print("  - test: Test project.")
-    print("  - test_extended: Test project with extended version.")
+    print("  - testExtended: Test project with extended version.")
     print("  - coverage: Coverage analysis.")
     print("  - style: Lint with flake8.")
+    print("  - lintNb: Lint notebooks.")
     print("  - mypy: Typing analysis.")
     print("  - docs: Build documentation.")
 
@@ -43,6 +44,7 @@ def clean(c, python_version=CURRENT_PYTHON_VERSION):
     c.run('find . | grep -E ".ipynb_checkpoints" | xargs rm -rf')
     c.run('find . | grep -E ".trash" | xargs rm -rf')
     c.run("rm -f .coverage")
+    c.run("rm -rf .mypy_cache .nox .pytest_cache")
 
 
 @task
@@ -51,7 +53,7 @@ def test(c, python_version=CURRENT_PYTHON_VERSION):
 
 
 @task
-def test_extended(c, python_version=CURRENT_PYTHON_VERSION):
+def testExtended(c, python_version=CURRENT_PYTHON_VERSION):
     c.run(f"nox -s test_extended-{python_version}")
 
 
@@ -63,6 +65,11 @@ def coverage(c, python_version=CURRENT_PYTHON_VERSION):
 @task
 def mypy(c, python_version=CURRENT_PYTHON_VERSION):
     c.run(f"nox -s mypy-{python_version}")
+
+
+@task
+def lintNb(c, python_version=CURRENT_PYTHON_VERSION):
+    c.run(f"nox -s lint_nb-{python_version}")
 
 
 @task
