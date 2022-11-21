@@ -6,7 +6,6 @@ train:
     n_embed: 1024
     double_z: False
     z_channels: 256
-    resolution: 256
     in_channels: 3
     out_ch: 3
     ch: 128
@@ -23,8 +22,6 @@ train:
     - 256
     - 256
     - 3
-  train_batch_size: 12
-  test_batch_size: 12
   codebook_weight: 1.0
   monitor: total_loss
   recon_loss: "l1"
