@@ -6,18 +6,17 @@ disc_hparams:
 save_dir: 'test_save'
 log_dir: 'test_dir'
 check_val_every_n_epoch: 1
+log_img_every_n_epoch: 1
 input_shape:
   - 256
   - 256
   - 3
-train_batch_size: 2
-test_batch_size: 2
 codebook_weight: 1.0
 monitor: total_loss
 recon_loss: "l1"
 disc_loss: "hinge"
 disc_weight: 0.8
-num_epochs: 2
+num_epochs: 1
 dtype: 'float32'
 distributed: false
 seed: 42

@@ -25,7 +25,7 @@ def set_seed(seed: int) -> None:
     tf.random.set_seed(seed)
 
 
-def post_processing(image: np.ndarray) -> np.ndarray:
+def post_processing(image: np.ndarray, resize: Optional[int] = None) -> np.ndarray:
     """Post processing for image.
     un standarize image and multiply by 255.
     Next clip values to [0, 255] and convert to uint8.
@@ -39,7 +39,34 @@ def post_processing(image: np.ndarray) -> np.ndarray:
     image *= 255.0
     image = np.clip(image, 0.0, 255.0)
     image = image.astype(np.uint8)
+    if resize:
+        image = Image.fromarray(image)
+        image = image.resize((resize, resize))
+        image = np.array(image)
     return image
+
+
+def make_img_grid(images: np.ndarray, nrows: int = 4) -> np.ndarray:
+    """Make image grid from images.
+    Args:
+        images (np.ndarray): image list to make grid.
+        nrows (int, optional): number of rows. Defaults to 4.
+    Returns:
+        np.ndarray: image grid object.
+    """
+    nindex, height, width, intensity = images.shape
+    ncols = nindex // nrows
+    if nindex != nrows * ncols:
+        images = images[: nrows * ncols]
+        nindex = nrows * ncols
+
+    # want result.shape = (height*nrows, width*ncols, intensity)
+    result = (
+        images.reshape(nrows, ncols, height, width, intensity)
+        .swapaxes(1, 2)
+        .reshape(height * nrows, width * ncols, intensity)
+    )
+    return result
 
 
 class BaseDataset(ABC):

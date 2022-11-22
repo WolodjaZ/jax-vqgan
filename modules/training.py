@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 import tensorflow as tf
 from flax.core.frozen_dict import FrozenDict
@@ -16,6 +17,52 @@ from transformers.modeling_flax_utils import FlaxPreTrainedModel
 from modules import config, losses, utils, vqgan
 
 logger = logging.getLogger(__name__)
+
+
+class GenerateCallback:
+    """Callback that generates and logs images during training."""
+
+    def __init__(self, input_imgs: Any, rng: jax.random.PRNGKey, every_n_epochs: int = 1):
+        """Initialize the callback.
+
+        Args:
+            input_imgs (Any): Images to reconstruct during training
+            every_n_epochs (int, optional):
+                Only save those images every N epochs (otherwise tensorboard gets quite large).
+                Defaults to 1.
+        """
+        super().__init__()
+        self.input_imgs = input_imgs
+        self.rng = rng
+        self.every_n_epochs = every_n_epochs
+
+    def log_generations(
+        self,
+        model: FlaxPreTrainedModel,
+        model_params: train_state.TrainState,
+        logger_tb: tf.summary.SummaryWriter,
+        epoch: int,
+    ):
+        if epoch % self.every_n_epochs == 0:
+            logger.info("Logging images to tensorboard at epoch %d", epoch)
+            self.rng, gumble_apply_rng, dropout_apply_rng = jax.random.split(self.rng, num=3)
+            reconst_imgs = model(
+                self.input_imgs,
+                params=model_params.params,
+                dropout_rng=dropout_apply_rng,
+                gumble_rng=gumble_apply_rng,
+                train=False,
+            )[0]
+            reconst_imgs = jax.device_get(reconst_imgs)
+
+            # Plot and add to tensorboard
+            imgs = np.stack([self.input_imgs, reconst_imgs], axis=1).reshape(
+                -1, *self.input_imgs.shape[1:]
+            )
+            imgs = np.stack([utils.post_processing(img, resize=64) for img in imgs], axis=0)
+            img_to_log = utils.make_img_grid(imgs, nrows=2)
+            with logger_tb.as_default():
+                tf.summary.image("Reconstructions", [img_to_log], step=epoch)
 
 
 class TrainerModule:
@@ -33,6 +80,8 @@ class TrainerModule:
         self.module_config = module_config
         self.eval_key = module_config.monitor
         self.main_rng = jax.random.PRNGKey(self.module_config.seed)
+        self.generate_callback: Optional[GenerateCallback] = None
+        self.main_rng, self.generator_callback_rng = jax.random.split(self.main_rng)
         # Set model name
         self.model_name = self.module_config.model_name
         self.model_class = model_class
@@ -102,6 +151,23 @@ class TrainerModule:
                     if best_eval is None or eval_metrics[self.eval_key] > best_eval:
                         best_eval = eval_metrics[self.eval_key]
                         self.save_model(epoch_idx)
+
+                if self.generate_callback is None:
+                    for batch in train_loader():
+                        if len(batch) > 8:
+                            batch = batch[:8]
+                        self.generate_callback = GenerateCallback(
+                            batch,
+                            self.generator_callback_rng,
+                            every_n_epochs=self.module_config.log_img_every_n_epoch,
+                        )
+                        del self.generator_callback_rng
+                        break
+
+                if self.generate_callback is not None:
+                    self.generate_callback.log_generations(
+                        self.model, self.state, self.logger, epoch=epoch_idx
+                    )
 
                 self.logger.flush()
         logger.info("Finished training ✅ with best eval metric: %f 😎", best_eval)

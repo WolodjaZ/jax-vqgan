@@ -19,6 +19,7 @@ train:
   save_dir: 'model_save'
   log_dir: 'log_dir'
   check_val_every_n_epoch: 1
+  log_img_every_n_epoch: 20
   input_shape:
     - 256
     - 256

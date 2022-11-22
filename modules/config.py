@@ -113,6 +113,7 @@ class TrainConfig:
         save_dir (str): directory to save the model.
         log_dir (str): directory to save the logs for tensorboard.
         check_val_every_n_epoch (int): number of epochs to run validation.
+        log_img_every_n_epoch (int): number of epochs to log images.
         input_shape (Tuple[int, int, int]): shape of the input image (H, W, C).
         codebook_weight (float): weight for the codebook loss (Quantizer part).
         monitor (str): metric to monitor for saving best model.
@@ -141,6 +142,7 @@ class TrainConfig:
     save_dir: str
     log_dir: str
     check_val_every_n_epoch: int
+    log_img_every_n_epoch: int
     input_shape: Tuple[int, int, int]
     codebook_weight: float
     monitor: str
