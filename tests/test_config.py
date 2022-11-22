@@ -1,5 +1,4 @@
 import albumentations as A
-import jax
 import pytest
 from omegaconf import OmegaConf
 
@@ -41,13 +40,9 @@ def test_TrainConfig():
     # Test distributed
     dist_load_confg = load_confg.copy()
     dist_load_confg["distributed"] = True
-    dist_load_confg["train_batch_size"] = 8
-    dist_load_confg["test_batch_size"] = 8
     cfg = config.TrainConfig(**dist_load_confg)
     assert cfg is not None
     assert cfg.distributed
-    assert cfg.train_batch_size == 8 // jax.device_count()
-    assert cfg.test_batch_size == 8 // jax.device_count()
 
     # Test temp_scheduler
     temp_load_confg = load_confg.copy()
@@ -181,18 +176,16 @@ def test_LoadConfig():
     assert cfg.train is not None
     assert isinstance(cfg.data, config.DataConfig)
     assert isinstance(cfg.train, config.TrainConfig)
-    assert cfg.train.train_batch_size == cfg.data.train_params.batch_size
-    assert cfg.train.test_batch_size == cfg.data.test_params.batch_size
 
-    # Test batch_size assignment from data config
-    load_data_confg["train_params"]["batch_size"] = 1
-    load_data_confg["test_params"]["batch_size"] = 1
-    load_train_confg["train_batch_size"] = 2
-    load_train_confg["test_batch_size"] = 2
+    assert cfg.train.disc_hparams.resolution == cfg.data.size
+    assert cfg.train.model_hparams.resolution == cfg.data.size
+
+    # Test resolution assignment from data config
+    load_data_confg["size"] = 128
 
     cfg = config.LoadConfig(data=load_data_confg, train=load_train_confg)
-    assert cfg.train.train_batch_size == cfg.data.train_params.batch_size
-    assert cfg.train.test_batch_size == cfg.data.test_params.batch_size
+    assert cfg.train.model_hparams.resolution == 128
+    assert cfg.train.model_hparams.resolution == 128
 
     # Test albumenation load
     A.from_dict(cfg.data.transform) is not None

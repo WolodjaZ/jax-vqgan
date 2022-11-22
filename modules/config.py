@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
-import jax
 import jax.numpy as jnp
 import optax
 from hydra.utils import instantiate
@@ -114,13 +113,12 @@ class TrainConfig:
         save_dir (str): directory to save the model.
         log_dir (str): directory to save the logs for tensorboard.
         check_val_every_n_epoch (int): number of epochs to run validation.
+        log_img_every_n_epoch (int): number of epochs to log images.
         input_shape (Tuple[int, int, int]): shape of the input image (H, W, C).
-        train_batch_size (int): batch size for training.  Only informative.
-        test_batch_size (optional, int): batch size for testing. Only informative.
         codebook_weight (float): weight for the codebook loss (Quantizer part).
         monitor (str): metric to monitor for saving best model.
-        recon_loss (str): reconstruction loss to use.
-        disc_loss (str): discriminator loss to use.
+        recon_loss (str): reconstruction loss to use. Can be one of `l1`, `l2`, `comb`, `mape`.
+        disc_loss (str): discriminator loss to use. Can be `vanilla` or `hinge`.
         disc_weight (float): weight for the discriminator loss.
         num_epochs (int): number of epochs to train.
         dtype (str): dtype to use for training.
@@ -144,9 +142,8 @@ class TrainConfig:
     save_dir: str
     log_dir: str
     check_val_every_n_epoch: int
+    log_img_every_n_epoch: int
     input_shape: Tuple[int, int, int]
-    train_batch_size: int
-    test_batch_size: int
     codebook_weight: float
     monitor: str
     recon_loss: str
@@ -185,10 +182,6 @@ class TrainConfig:
                 f"""Invalid dtype {self.dtype}
                              expected one of float64, float32, float16, bfloat16"""
             )
-        # if distributed: chunk the dataset
-        if self.distributed:
-            self.train_batch_size = self.train_batch_size // jax.device_count()
-            self.test_batch_size = self.test_batch_size // jax.device_count()
         # instantiate the optimizer
         self.optimizer = instantiate(self.optimizer)
         assert type(self.optimizer) == optax.GradientTransformation
@@ -258,6 +251,6 @@ class LoadConfig:
         self.train = TrainConfig(**self.train)
         self.data = DataConfig(**self.data)
 
-        # set batch_size
-        self.train.train_batch_size = self.data.train_params.batch_size
-        self.train.test_batch_size = self.data.test_params.batch_size
+        # set resolution
+        self.train.disc_hparams.resolution = self.data.size
+        self.train.model_hparams.resolution = self.data.size

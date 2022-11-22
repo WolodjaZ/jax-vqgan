@@ -61,6 +61,56 @@ def test_TrainerVQGan_initalization(LOAD_CONFIG, recon_loss, disc_loss):
     del model, cfg, load_confg
 
 
+@pytest.mark.parametrize("log_epoch", [1, 3])
+def test_GenerateCallback(mocker, LOAD_CONFIG, log_epoch):
+    rng = jax.random.PRNGKey(0)
+    load_confg = OmegaConf.to_container(LOAD_CONFIG)
+
+    # Load data config
+    data_cfg = OmegaConf.load(DATACONFIG_FILE)
+    load_dataconfg = OmegaConf.to_container(data_cfg)
+    cfg_data = config.DataConfig(**load_dataconfg)
+
+    with tempfile.TemporaryDirectory() as dp:
+        load_confg["save_dir"] = os.path.join(dp, load_confg["save_dir"])
+        load_confg["log_dir"] = os.path.join(dp, load_confg["log_dir"])
+        cfg = config.TrainConfig(**load_confg)
+        assert cfg is not None
+
+        vqgan_trainer = training.TrainerVQGan(cfg)
+        assert vqgan_trainer is not None
+
+        dataset_test_class = utils.DummyDataset(train=False, dtype=cfg.dtype, config=cfg_data)
+        loader = utils.DataLoader(dataset_test_class, distributed=False)
+        mock_preprocess = mocker.patch(
+            "jax.device_get",
+            side_effect=jax.device_get,
+        )
+
+        for batch in loader():
+            if len(batch) > 8:
+                batch = batch[:8]
+            generate_callback = training.GenerateCallback(
+                batch,
+                rng,
+                every_n_epochs=log_epoch,
+            )
+            break
+
+        logged = False
+        for epoch in range(1, 3):
+            generate_callback.log_generations(
+                vqgan_trainer.model, vqgan_trainer.state, vqgan_trainer.logger, epoch=epoch
+            )
+            if epoch % log_epoch == 0:
+                logged = True
+
+        if logged:
+            mock_preprocess.assert_called()
+        else:
+            mock_preprocess.assert_not_called()
+
+
 def test_init_create_optimizer(LOAD_CONFIG):
     """Test that the optimizer is created correctly."""
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
@@ -130,7 +180,7 @@ def test_save_load_model(LOAD_CONFIG):
 
         # test the model saving
         model.init_optimizer()
-        model.save_model()
+        model.save_model(step=1)
         assert len(os.listdir(load_confg["save_dir"])) == 2
         assert len(os.listdir(os.path.join(load_confg["save_dir"], f"{cfg.model_name}"))) > 0
         assert len(os.listdir(os.path.join(load_confg["save_dir"], f"{cfg.model_name}_disc"))) > 0
@@ -160,6 +210,7 @@ def test_save_load_model(LOAD_CONFIG):
             )
         )
         assert model_new.state_disc.tx is not None
+        assert model_new.start_step == 1
 
     del model, cfg, load_confg, model_new
 
@@ -167,10 +218,10 @@ def test_save_load_model(LOAD_CONFIG):
 def test_train_step(LOAD_CONFIG):
     """Test that the model can be trained for one step."""
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
-
+    batch = 2
     rng = jax.random.PRNGKey(load_confg["seed"])
     input_shape = [
-        load_confg["train_batch_size"],
+        batch,
     ] + load_confg["input_shape"]
     batch = jax.random.normal(rng, input_shape)
 
@@ -269,10 +320,10 @@ def test_train_step(LOAD_CONFIG):
 def test_eval_step(LOAD_CONFIG):
     """Test that the model can be evaluated for one step."""
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
-
+    batch = 2
     rng = jax.random.PRNGKey(load_confg["seed"])
     input_shape = [
-        load_confg["train_batch_size"],
+        batch,
     ] + load_confg["input_shape"]
     batch = jax.random.normal(rng, input_shape)
 
@@ -326,16 +377,15 @@ def test_eval_step(LOAD_CONFIG):
     "use_scheduler, batch_size, num_steps_disc_start",
     [
         (False, 2, 2),
-        #        (False, 2, 1),
-        #        (False, 4, 2),
-        #        (False, 2, 2),
-        #        (True, 2, 2),
+        (False, 2, 1),
+        (False, 4, 2),
+        (False, 2, 2),
+        (True, 2, 2),
     ],
 )
 def test_train_epoch(LOAD_CONFIG, use_scheduler, batch_size, num_steps_disc_start):
     """Test that the model can be trained for one epoch."""
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
-    load_confg["train_batch_size"] = batch_size
     load_confg["disc_start"] = num_steps_disc_start
     if use_scheduler is not None:
         load_confg["temp_scheduler"] = {
@@ -357,8 +407,6 @@ def test_train_epoch(LOAD_CONFIG, use_scheduler, batch_size, num_steps_disc_star
         load_confg["save_dir"] = os.path.join(dp, load_confg["save_dir"])
         load_confg["log_dir"] = os.path.join(dp, load_confg["log_dir"])
         cfg = config.TrainConfig(**load_confg)
-
-        load_dataconfg["train_params"]["batch_size"] = cfg.train_batch_size
         cfg_data = config.DataConfig(**load_dataconfg)
 
         dataset_train_class = utils.DummyDataset(train=False, dtype=cfg.dtype, config=cfg_data)
@@ -433,7 +481,6 @@ def test_train_epoch(LOAD_CONFIG, use_scheduler, batch_size, num_steps_disc_star
 def test_eval_model(LOAD_CONFIG, batch_size):
     """Test that the model can be evaluated."""
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
-    load_confg["test_batch_size"] = batch_size
 
     # Load data config
     data_cfg = OmegaConf.load(DATACONFIG_FILE)
@@ -484,8 +531,6 @@ def test_eval_model(LOAD_CONFIG, batch_size):
 def test_train_model(LOAD_CONFIG, batch_size, epochs):
     """Test that the model can be trained for one epoch."""
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
-    load_confg["train_batch_size"] = batch_size
-    load_confg["test_batch_size"] = batch_size
     load_confg["disc_start"] = 1
     load_confg["temp_scheduler"] = None
     load_confg["num_epochs"] = epochs
@@ -525,8 +570,6 @@ def test_simple_train_model(LOAD_CONFIG):
     batch_size = 2
     epochs = 1
     load_confg = OmegaConf.to_container(LOAD_CONFIG)
-    load_confg["train_batch_size"] = batch_size
-    load_confg["test_batch_size"] = batch_size
     load_confg["disc_start"] = 1
     load_confg["temp_scheduler"] = None
     load_confg["num_epochs"] = epochs

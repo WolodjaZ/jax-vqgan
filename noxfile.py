@@ -50,6 +50,8 @@ def coverage(session: nox.Session) -> None:
     session.run(
         "coverage",
         "run",
+        "--source",
+        "modules",
         "--append",
         "-m",
         "pytest",
@@ -57,7 +59,7 @@ def coverage(session: nox.Session) -> None:
         "not training_long",
         "tests",
     )
-    session.run("coverage", "report", "--fail-under=1", "--ignore-errors")  # 100
+    session.run("coverage", "report", "--fail-under=1", "--ignore-errors")  # 90
     session.run("coverage", "erase")
 
 

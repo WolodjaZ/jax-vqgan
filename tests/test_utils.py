@@ -1,4 +1,3 @@
-# flake8: noqa: E401
 import tempfile
 from typing import Tuple
 
@@ -12,6 +11,9 @@ from omegaconf import OmegaConf
 from PIL import Image
 
 from modules import config, utils
+
+# flake8: noqa: E401
+
 
 DATACONFIG_PATH = "tests/dataconfig_test.yaml"
 
@@ -86,6 +88,65 @@ def test_DummyDataset(mocker):
 
     # Clean up
     del dataset_train, dataset_test, cfg_omgega, load_confg, cfg
+
+
+def test_post_processing():
+    """Test the post processing function."""
+    utils.set_seed(42)
+    dtype = jnp.float32
+    cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
+    load_confg = OmegaConf.to_container(cfg_omgega)
+    cfg = config.DataConfig(**load_confg)
+
+    # Train dataset
+    dataset_train_class = utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+    dataset_train = dataset_train_class.get_dataset()
+    dataset_train = dataset_train.as_numpy_iterator()
+    data = next(dataset_train)
+    img = utils.post_processing(data)
+    assert img.shape == (cfg.size, cfg.size, 3)
+    assert img.dtype == np.uint8
+    assert img.max() <= 255
+    img.min() >= 0
+
+    # Test resize
+    img = utils.post_processing(data, resize=64)
+    assert img.shape == (64, 64, 3)
+    assert img.dtype == np.uint8
+    assert img.max() <= 255
+    img.min() >= 0
+
+    # Test dataset
+    dataset_test_class = utils.DummyDataset(train=False, dtype=dtype, config=cfg)
+    dataset_test = dataset_test_class.get_dataset()
+    dataset_test = dataset_test.as_numpy_iterator()
+    data = next(dataset_test)
+    img = utils.post_processing(data)
+    assert img.shape == (cfg.size, cfg.size, 3)
+    assert img.dtype == np.uint8
+    assert img.max() <= 255
+    img.min() >= 0
+
+
+def test_make_img_grid():
+    """Test the post processing function."""
+    utils.set_seed(42)
+    dtype = jnp.float32
+    cfg_omgega = OmegaConf.load(DATACONFIG_PATH)
+    load_confg = OmegaConf.to_container(cfg_omgega)
+    cfg = config.DataConfig(**load_confg)
+
+    # Train dataset
+    dataset_train_class = utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+    dataset_train = dataset_train_class.get_dataset()
+    dataset_train = dataset_train.as_numpy_iterator()
+    data = next(dataset_train)
+    imgs = np.stack([data, data], axis=1).reshape(-1, *data.shape)
+    img = utils.make_img_grid(imgs, nrows=2)
+    assert img is not None
+    assert type(img) == np.ndarray
+    assert img.shape[-1] == 3
+    assert len(img.shape) == 3
 
 
 def test_reproducibility_Dataset(mocker):
@@ -270,15 +331,6 @@ def test_normalize_VQGanImageProcessor():
 )
 def test_preprocess(pil_img, list_of_images, reverted_channels):
     """Test the preprocess function."""
-
-    def create_img(rng: jax.random.PRNGKey, reverted: bool) -> np.ndarray:
-        image = jax.random.normal(rng, (224, 224, 3))
-        if reverted:
-            jnp.transpose(image, (2, 0, 1))
-        image = (image + 1) / 2 * 255
-        image = jax.lax.clamp(0.0, image, 255.0)
-        return np.uint8(np.asarray(image))
-
     splits = 4
     rng = jax.random.PRNGKey(0)
     if list_of_images:

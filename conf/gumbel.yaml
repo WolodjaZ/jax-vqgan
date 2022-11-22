@@ -1,0 +1,88 @@
+train:
+  model_name: vqgan_imagenet
+  model_hparams:
+    _target_: modules.config.VQGANConfig
+    embed_dim: 256
+    kl_weight: 1.0e-08
+    n_embed: 8192
+    double_z: False
+    z_channels: 256
+    in_channels: 3
+    out_ch: 3
+    ch: 128
+    ch_mult: [ 1,1,2,4]
+    num_res_blocks: 2
+    attn_resolutions: [32]
+    use_gumbel: true
+    dropout: 0.0
+  disc_hparams:
+    _target_: modules.config.DiscConfig
+  save_dir: 'model_save'
+  log_dir: 'log_dir'
+  check_val_every_n_epoch: 1
+  log_img_every_n_epoch: 20
+  input_shape:
+    - 256
+    - 256
+    - 3
+  codebook_weight: 1.0
+  monitor: total_loss
+  recon_loss: "l1"
+  disc_loss: "hinge"
+  disc_weight: 0.8
+  num_epochs: 300000
+  dtype: 'float32'
+  distributed: false
+  seed: 42
+  optimizer:
+    _target_: optax.adamw
+    learning_rate: 4.5e-6
+    b1: 0.9
+    b2: 0.999
+    weight_decay: 0.0001
+  optimizer_disc:
+    _target_: optax.adamw
+    learning_rate: 4.5e-6
+    b1: 0.9
+    b2: 0.999
+    weight_decay: 0.0001
+  disc_start: 250001
+  temp_scheduler:
+    _target_: optax.warmup_cosine_decay_schedule
+    warmup_steps: 0
+    decay_steps: 1000001
+    init_value: 0.9
+    peak_value: 0.9
+    end_value: 1.0e-06
+data:
+  train_params:
+    batch_size: 12
+    shuffle: true
+  test_params:
+    batch_size: 12
+    shuffle: false
+  dataset_name: imagenette
+  dataset_root: ../../datasets
+  transform:
+    __version__: 1.3.0
+    transform:
+      __class_fullname__: Compose
+      additional_targets: {}
+      bbox_params: null
+      keypoint_params: null
+      p: 1.0
+      transforms:
+      - __class_fullname__: RandomBrightnessContrast
+        always_apply: false
+        brightness_by_max: true
+        brightness_limit:
+        - -0.1
+        - 0.1
+        contrast_limit:
+        - -0.2
+        - 0.2
+        p: 0.5
+      - __class_fullname__: HorizontalFlip
+        always_apply: false
+        p: 0.5
+  size: 256
