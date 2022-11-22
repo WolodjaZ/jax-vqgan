@@ -175,7 +175,7 @@ class TensorflowDataset(BaseDataset):
         # import resource
         # low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
         # resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
-        split = "train" if train else "test"
+        split = "train" if train else "validation"
         ds = tfds.load(
             name=self.dataset_name, split=split, as_supervised=True, data_dir=self.root
         ).map(tf.autograph.experimental.do_not_convert(lambda x, y: x))

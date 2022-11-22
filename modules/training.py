@@ -263,7 +263,7 @@ class TrainerModule:
             step (int, optional): Current step. Defaults to None.
         """
         step = step if step is not None else self.module_config.num_epochs
-        logger.info("Saving model 📠🧠 for step %d", step)
+        logger.info("Saving model 📠 for step %d", step)
         checkpoints.save_checkpoint(
             ckpt_dir=self.save_dir,
             target={"state": self.state, "step": step, "rng": self.main_rng},
