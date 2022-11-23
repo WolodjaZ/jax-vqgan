@@ -160,14 +160,21 @@ class TrainConfig:
 
     def __post_init__(self):
         # load model hparams
-        self.model_hparams = instantiate(self.model_hparams)
-        assert type(self.model_hparams) == VQGANConfig
+        self.model_hparams = (
+            VQGANConfig(**self.model_hparams) if self.model_hparams is not None else VQGANConfig()
+        )
+        if not isinstance(self.model_hparams, VQGANConfig):
+            raise TypeError("model_hparams could not create VQGANConfig")
         # load disc hparams
-        self.disc_hparams = instantiate(self.disc_hparams)
-        assert type(self.disc_hparams) == DiscConfig
+        self.disc_hparams = (
+            DiscConfig(**self.disc_hparams) if self.disc_hparams is not None else DiscConfig()
+        )
+        if not isinstance(self.disc_hparams, DiscConfig):
+            raise TypeError("disc_hparams could not create DiscConfig")
         # conver shape list to tuple shape
         self.input_shape = tuple(self.input_shape)
-        assert len(self.input_shape) == 3
+        if len(self.input_shape) != 3:
+            raise ValueError(f"input_shape: {self.input_shape} should be of length 3")
         # set dtype
         if self.dtype == "float64":
             self.dtype = jnp.float64
@@ -184,14 +191,19 @@ class TrainConfig:
             )
         # instantiate the optimizer
         self.optimizer = instantiate(self.optimizer)
-        assert type(self.optimizer) == optax.GradientTransformation
+        if not isinstance(self.optimizer, optax.GradientTransformation):
+            raise TypeError("optimizer should be optax GradientTransformation dict to instantiate")
         # instantiate the optimizer for discriminator
         self.optimizer_disc = instantiate(self.optimizer_disc)
-        assert type(self.optimizer_disc) == optax.GradientTransformation
+        if not isinstance(self.optimizer_disc, optax.GradientTransformation):
+            raise TypeError(
+                "optimizer_disc should be optax GradientTransformation dict to instantiate"
+            )
         # if optimizer is a dict, instantiate it
         if self.temp_scheduler is not None:
             self.temp_scheduler: Callable = instantiate(self.temp_scheduler)
-            assert hasattr(self.temp_scheduler, "__call__")
+            if not hasattr(self.temp_scheduler, "__call__"):
+                raise TypeError("temp_scheduler should be a callable or None")
 
 
 @dataclass
@@ -230,8 +242,12 @@ class DataConfig:
 
     def __post_init__(self):
         # set train_params and test_params
-        self.train_params = DataParams(**self.train_params)
-        self.test_params = DataParams(**self.test_params)
+        self.train_params = (
+            DataParams(**self.train_params) if self.train_params is not None else DataParams()
+        )
+        self.test_params = (
+            DataParams(**self.test_params) if self.test_params is not None else DataParams()
+        )
 
 
 @dataclass
@@ -248,8 +264,8 @@ class LoadConfig:
     data: DataConfig
 
     def __post_init__(self):
-        self.train = TrainConfig(**self.train)
-        self.data = DataConfig(**self.data)
+        self.train = TrainConfig(**self.train) if self.train is not None else TrainConfig()
+        self.data = DataConfig(**self.data) if self.data is not None else DataConfig()
 
         # set resolution
         self.train.disc_hparams.resolution = self.data.size

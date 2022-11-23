@@ -1,8 +1,6 @@
 model_name: test_model
 model_hparams:
-   _target_: modules.config.VQGANConfig
 disc_hparams:
-  _target_: modules.config.DiscConfig
 save_dir: 'test_save'
 log_dir: 'test_dir'
 check_val_every_n_epoch: 1

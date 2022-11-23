@@ -3,6 +3,7 @@ import resource
 
 import hydra
 from hydra.core.config_store import ConfigStore
+from omegaconf import OmegaConf
 
 from modules.config import LoadConfig
 from modules.training import TrainerVQGan
@@ -15,7 +16,10 @@ logger = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def train(cfg: LoadConfig):
-    logging.info(f"Using config: {cfg}")  # TODO make it pretty to print
+    # Initialize the configs
+    cfg = LoadConfig(**OmegaConf.to_container(cfg))
+    logger.info(f"Using config: {cfg}")  # TODO make it pretty to print
+
     # Prepare datasets and dataloaders
     logger.info("Preparing datasets and dataloaders 🚀")
     dataset_train_class = TensorflowDataset(train=True, dtype=cfg.train.dtype, config=cfg.data)

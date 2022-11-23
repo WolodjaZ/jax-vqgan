@@ -27,3 +27,8 @@ filterwarnings = [
 
 [tool.black]
 line-length = 100
+
+[tool.nbqa.files]
+isort = "^notebooks/example"
+black = "^notebooks/example"
+flake8 = "^notebooks/example"

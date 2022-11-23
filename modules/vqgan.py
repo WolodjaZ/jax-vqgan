@@ -89,9 +89,9 @@ class VectorQuantizer(nn.Module):
         min_encoding_indices = min_encoding_indices.reshape(z.shape[0], -1)
 
         # compute the codebook_loss (q_loss)
-        q_loss = self.config.beta * jnp.mean(
-            (jax.lax.stop_gradient(z_q) - z) ** 2
-        ) + jnp.mean((z_q - jax.lax.stop_gradient(z)) ** 2)
+        q_loss = self.config.beta * jnp.mean((jax.lax.stop_gradient(z_q) - z) ** 2) + jnp.mean(
+            (z_q - jax.lax.stop_gradient(z)) ** 2
+        )
 
         # here we return the embeddings and indices
         return z_q, q_loss, min_encoding_indices
@@ -294,9 +294,7 @@ class VQModule(nn.Module):
     def decode_code(self, code: jnp.ndarray, z_shape: Tuple[int, ...]) -> jnp.ndarray:
         """Decode already created z_code"""
         params = self.variables["params"]["quantizer"]
-        z_q = self.quantizer.get_codebook_entry(
-            params=params, indices=code, shape=z_shape
-        )
+        z_q = self.quantizer.get_codebook_entry(params=params, indices=code, shape=z_shape)
         x = self.decode(z_q, deterministic=True)
         return x
 
@@ -481,9 +479,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
             method=self.module.decode_code,
         )
 
-    def update_temperature(
-        self, temperature: float, params: Optional[FrozenDict] = None
-    ) -> float:
+    def update_temperature(self, temperature: float, params: Optional[FrozenDict] = None) -> float:
         """Update the temperature of the model.
         Args:
             temperature (float): the temperature to update to.
@@ -525,9 +521,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         """
         # Check dtype
         pixel_values = (
-            pixel_values.astype(self.dtype)
-            if pixel_values.dtype != self.dtype
-            else pixel_values
+            pixel_values.astype(self.dtype) if pixel_values.dtype != self.dtype else pixel_values
         )
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
@@ -615,12 +609,9 @@ class VQGanDiscriminator(FlaxPreTrainedModel):
 
     Arguments:
         module_class (nn.Module): the discriminator module class (NLayerDiscriminator).
-        config_class (PretrainedConfig): configuration class to store the configuration of
-            the model: (DiscConfig)
     """
 
     module_class: nn.Module = NLayerDiscriminator
-    config_class: PretrainedConfig = DiscConfig
 
     def __init__(
         self,

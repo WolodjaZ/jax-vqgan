@@ -141,13 +141,18 @@ class TrainerModule:
             for epoch_idx in range(1 + self.start_step, self.module_config.num_epochs + 1):
                 logger.info("Epoch: %d", epoch_idx)
                 train_metrics = self.train_epoch(train_loader, epoch=epoch_idx)
+                train_metrics_str = "Training metrics:"
                 for key in train_metrics:
                     tf.summary.scalar(f"train/{key}", train_metrics[key], step=epoch_idx)
-
+                    train_metrics_str += f" {key}: {train_metrics[key]:.4f},"
+                logger.info(train_metrics_str)
                 if epoch_idx % self.module_config.check_val_every_n_epoch == 0:
                     eval_metrics = self.eval_model(val_loader)
+                    eval_metrics_str = "Evaluation metrics:"
                     for key in eval_metrics:
                         tf.summary.scalar(f"val/{key}", eval_metrics[key], step=epoch_idx)
+                        eval_metrics_str += f" {key}: {eval_metrics[key]:.4f},"
+                    logger.info(eval_metrics_str)
                     if best_eval is None or eval_metrics[self.eval_key] > best_eval:
                         best_eval = eval_metrics[self.eval_key]
                         self.save_model(epoch_idx)
@@ -245,7 +250,7 @@ class TrainerModule:
         """
         metrics: Dict[str, float] = defaultdict(float)
         count = 0
-        for batch in data_loader():
+        for batch in tqdm(data_loader(), desc="Evaluating", leave=False):
             batch_metrics: Dict[str, float]
             self.main_rng, batch_metrics = self.eval_step(
                 state=self.state, batch=batch, rng=self.main_rng
