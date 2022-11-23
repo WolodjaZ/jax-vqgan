@@ -1,6 +1,6 @@
 # jax-vqgan: Implementation of VQGAN in JAX/Flax.
 
-This README is a very short. **To learn everything you need to know about this repo, see our [full documentation](https://www.scientificamerican.com/article/cats-recognize-their-own-names-even-if-they-choose-to-ignore-them/)**
+This README is a very short. **To learn everything you need to know about this repo, see our [full documentation](https://wolodjaz.github.io/jax-vqgan/)**
 
 ## TODO list
 
