@@ -1,7 +1,6 @@
 train:
   model_name: vqgan_imagenet
   model_hparams:
-    _target_: modules.config.VQGANConfig
     embed_dim: 256
     kl_weight: 1.0e-08
     n_embed: 8192
@@ -16,7 +15,7 @@ train:
     use_gumbel: true
     dropout: 0.0
   disc_hparams:
-    _target_: modules.config.DiscConfig
+    input_last_dim: 3
   save_dir: 'model_save'
   log_dir: 'log_dir'
   check_val_every_n_epoch: 1

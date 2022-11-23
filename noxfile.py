@@ -99,7 +99,14 @@ def lint_nb(session: nox.Session) -> None:
     session.run("nbqa", "black", "notebooks")
     session.run("nbqa", "flake8", "--max-line-length=100", "notebooks")
     session.run("nbqa", "isort", "notebooks")
-    session.run("jupyter", "nbconvert", "--clear-output", "--inplace", "notebooks/*.ipynb")
+    session.run(
+        "jupyter",
+        "nbconvert",
+        "--clear-output",
+        "--inplace",
+        "notebooks/visualize.ipynb",
+        "notebooks/optimize.ipynb",
+    )
 
 
 @nox.session(python=SUPPORTED_PY_VERSIONS)
