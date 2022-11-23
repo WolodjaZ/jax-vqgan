@@ -33,7 +33,7 @@ def post_processing(image: np.ndarray, resize: Optional[int] = None) -> np.ndarr
         image (np.ndarray): image to post process.
 
     Returns:
-        np.ndarray: post processed image.
+        post processed image.
     """
     image = image * IMAGENET_STANDARD_STD + IMAGENET_STANDARD_MEAN
     image *= 255.0
@@ -52,7 +52,7 @@ def make_img_grid(images: np.ndarray, nrows: int = 4) -> np.ndarray:
         images (np.ndarray): image list to make grid.
         nrows (int, optional): number of rows. Defaults to 4.
     Returns:
-        np.ndarray: image grid object.
+        image grid object.
     """
     nindex, height, width, intensity = images.shape
     ncols = nindex // nrows
@@ -96,7 +96,8 @@ class BaseDataset(ABC):
         Args:
             train: If the dataset is for training.
         Returns:
-            tf.data.Dataset: The dataset."""
+            The dataset.
+        """
         pass
 
     def __len__(self) -> int:
@@ -108,7 +109,7 @@ class BaseDataset(ABC):
         Args:
             image: The image to preprocess.
         Returns:
-            tf.Tensor: The preprocessed image.
+            The preprocessed image.
         """
 
         def aug_fn(image: tf.Tensor) -> tf.Tensor:
@@ -131,7 +132,7 @@ class BaseDataset(ABC):
     def get_dataset(self) -> tf.data.Dataset:
         """Return the dataset.
         Returns:
-            tf.data.Dataset: The dataset.
+            The dataset.
         """
         dataset = self.dataset.map(self._preprocess)
         dataset = dataset.shuffle(self.params.batch_size * 16) if self.params.shuffle else dataset
@@ -146,7 +147,8 @@ class DummyDataset(BaseDataset):
         Args:
             train: If the dataset is for training.
         Returns:
-            tf.data.Dataset: The dataset."""
+            The dataset.
+        """
         dummy = (
             tf.random.normal(
                 (self.params.batch_size * 4, self.image_size, self.image_size, 3),
@@ -167,7 +169,7 @@ class TensorflowDataset(BaseDataset):
         Args:
             train: If the dataset is for training.
         Returns:
-            tf.data.Dataset: The dataset."""
+            The dataset."""
 
         # if you get error 'Too many open files' one can resolve it doing what this issue proposed
         # https://github.com/tensorflow/datasets/issues/1441#issuecomment-581660890
@@ -273,6 +275,7 @@ class VQGanImageProcessor:
         do_normalize: bool = True,
         image_mean: Optional[Union[float, List[float]]] = None,
         image_std: Optional[Union[float, List[float]]] = None,
+        dtype: jnp.dtype = jnp.float32,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -285,6 +288,7 @@ class VQGanImageProcessor:
         self.rescale_factor = rescale_factor
         self.image_mean = image_mean if image_mean is not None else IMAGENET_STANDARD_MEAN
         self.image_std = image_std if image_std is not None else IMAGENET_STANDARD_STD
+        self.dtype = dtype
 
     def resize(
         self,
@@ -311,7 +315,7 @@ class VQGanImageProcessor:
                 - `"channels_first"`: image in (num_channels, height, width) format.
                 - `"channels_last"`: image in (height, width, num_channels) format.
         Returns:
-            `np.ndarray`: The resized image.
+            The resized image.
         """
         if "height" not in size or "width" not in size:
             raise ValueError(
@@ -355,7 +359,7 @@ class VQGanImageProcessor:
                 - `"channels_first"`: image in (num_channels, height, width) format.
                 - `"channels_last"`: image in (height, width, num_channels) format.
         Returns:
-            `np.ndarray`: The resized image.
+            The resized image.
         """
         return image * scale
 
@@ -382,7 +386,7 @@ class VQGanImageProcessor:
                 - `"channels_first"`: image in (num_channels, height, width) format.
                 - `"channels_last"`: image in (height, width, num_channels) format.
         Returns:
-            `jnp.ndarray`: The normalized image.
+            The normalized image.
         """
         if isinstance(mean, list):
             assert len(mean) == min(image.shape)
@@ -446,8 +450,8 @@ class VQGanImageProcessor:
                 - `"channels_first"`: image in (num_channels, height, width) format.
                 - `"channels_last"`: image in (height, width, num_channels) format.
                 - Unset: Use the channel dimension format of the input image.
-            Returns:
-                `BatchFeature`: The preprocessed image(s).
+        Returns:
+            The preprocessed image(s).
         """
         assert data_format in ["channels_first", "channels_last"]
         do_resize = do_resize if do_resize is not None else self.do_resize

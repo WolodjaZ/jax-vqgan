@@ -183,7 +183,7 @@ class TrainerModule:
             data_loader (utils.DataLoader): Data loader to train on.
             epoch (int): Current epoch.
         Returns:
-            Dict[str, float]: Dictionary with all metrics.
+            Dictionary with all metrics.
         """
         metrics: Dict[str, float] = defaultdict(float)
         for batch in tqdm(data_loader(), desc="Training", leave=False):
@@ -236,7 +236,7 @@ class TrainerModule:
             batch (Any): Batch of data.
             rng (jax.random.PRNGKey): Random number generator.
         Returns:
-            Tuple[jax.random.PRNGKey, Dict[str, float]]: New rng and metrics.
+            New rng and metrics.
 
         """
         raise NotImplementedError
@@ -246,7 +246,7 @@ class TrainerModule:
         Args:
             data_loader (utils.DataLoader): Data loader to evaluate on.
         Returns:
-            Dict[str, float]: Dictionary with all metrics.
+            Dictionary with all metrics.
         """
         metrics: Dict[str, float] = defaultdict(float)
         count = 0
@@ -312,23 +312,23 @@ class TrainerModule:
     def checkpoint_exists(self) -> bool:
         """Check whether a pretrained model exist.
         Returns:
-            bool: True if model exists, False otherwise.
+            True if model exists, False otherwise.
         """
         return os.path.exists(self.save_dir) and len(os.listdir(self.log_dir)) > 0
 
 
 class TrainStateDisc(train_state.TrainState):
     """Train state for discriminator.
-    Arguments:
-        apply_fn: The function that applies the model.
-        step: The current step.
-        params: The model parameters.
-        batch_stats: The batch statistics. Defaults to None.
-        tx: The optimizer. Defaults to None.
-        opt_state: The optimizer state. Defaults to None.
+    Attributes:
+        apply_fn (Callable): The function that applies the model.
+        step (int): The current step.
+        params (FrozenDict): The model parameters.
+        batch_stats (FrozenDict): The batch statistics. Defaults to None.
+        tx (optax.GradientTransformation): The optimizer. Defaults to None.
+        opt_state (optax.OptState): The optimizer state. Defaults to None.
     """
 
-    batch_stats: Optional[FrozenDict[str, Any]] = None
+    batch_stats: Optional[FrozenDict] = None
 
 
 class TrainerVQGan(TrainerModule):
@@ -385,7 +385,7 @@ class TrainerVQGan(TrainerModule):
         Args:
             epoch (int): Current epoch.
         Returns:
-            float: Temperature.
+            Temperature.
         """
         if self.temp_scheduler is not None:
             return self.model.update_temperature(self.temp_scheduler(epoch))
@@ -449,7 +449,7 @@ class TrainerVQGan(TrainerModule):
     def checkpoint_exists(self) -> bool:
         """Check whether a pretrained model exist.
         Returns:
-            bool: True if model and discriminator exists, False otherwise.
+            True if model and discriminator exists, False otherwise.
         """
         main_model: bool = os.path.exists(self.save_dir) and len(os.listdir(self.log_dir)) > 0
         disc_model: bool = os.path.exists(self.save_dir_disc) and len(os.listdir(self.log_dir)) > 0
@@ -460,7 +460,7 @@ class TrainerVQGan(TrainerModule):
         Args:
             data_loader (utils.DataLoader): Data loader to train on.
         Returns:
-            Dict[str, float]: Dictionary with all metrics.
+            Dictionary with all metrics.
         """
         metrics: Dict[str, float] = defaultdict(float)
         metrics_disc = defaultdict(float)

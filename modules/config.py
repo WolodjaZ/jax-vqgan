@@ -9,6 +9,7 @@ from transformers import PretrainedConfig
 
 class VQGANConfig(PretrainedConfig):
     """Configuration class to store the configuration of a VQGAN model.
+    Dataclass for storing is based on `PretrainedConfig` from `transformers` package.
 
     Args:
         ch (int): number of channels.
@@ -52,7 +53,7 @@ class VQGANConfig(PretrainedConfig):
         kl_weight: float = 5e-4,
         act_name: str = "swish",
         give_pre_end: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(**kwargs)
         self.ch = ch
@@ -79,9 +80,14 @@ class VQGANConfig(PretrainedConfig):
 
 class DiscConfig(PretrainedConfig):
     """Configuration class to store the configuration of a Discriminator model.
+    Dataclass for storing is based on `PretrainedConfig` from `transformers` package.
 
     Args:
-        PretrainedConfig (_type_): _description_
+        input_last_dim (int): last dimension of the input sample in Discriminator.
+        output_last_dim (int): last dimension of the output sample in Discriminator.
+        resolution (int): resolution of the input image (256x256).
+        ndf (int): number of filters in the first layer of Discriminator.
+        n_layers (int): number of layers in Discriminator.
     """
 
     def __init__(
@@ -91,7 +97,7 @@ class DiscConfig(PretrainedConfig):
         resolution: int = 256,
         ndf: int = 64,
         n_layers: int = 3,
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(**kwargs)
         self.input_last_dim = input_last_dim
@@ -122,7 +128,7 @@ class TrainConfig:
         disc_weight (float): weight for the discriminator loss.
         num_epochs (int): number of epochs to train.
         dtype (str): dtype to use for training.
-            Supported ["float32", "float16", "float16", "bfloat16"].
+            Supported: `float32`, `float16`, `float16`, `bfloat16`.
         distributed (bool): whether to use distributed training.
         seed (int): seed for random number generation.
         optimizer (str): optimizer to use for training. Structure needs to be
@@ -257,7 +263,7 @@ class LoadConfig:
 
     Arguments:
         train (DataConfig): data configuration.
-        data (TrainConfig): (DataConfig) training configuration.
+        data (TrainConfig): training configuration.
     """
 
     train: TrainConfig
