@@ -8,7 +8,7 @@ def l2_loss(predictions: jnp.ndarray, targets: jnp.ndarray) -> jnp.ndarray:
         predictions (jnp.ndarray): Predictions from the model.
         targets (jnp.ndarray): Targets for the model.
     Returns:
-        Reconstruction loss (jnp.ndarray).
+        Reconstruction loss.
     """
     return (predictions - targets) ** 2
 
@@ -19,7 +19,7 @@ def l1_loss(predictions: jnp.ndarray, targets: jnp.ndarray) -> jnp.ndarray:
         predictions (jnp.ndarray): Predictions from the model.
         targets (jnp.ndarray): Targets for the model.
     Returns:
-        Reconstruction loss (jnp.ndarray).
+        Reconstruction loss.
     """
     return jnp.abs(predictions - targets)
 
@@ -30,7 +30,7 @@ def combo_loss(predictions: jnp.ndarray, targets: jnp.ndarray) -> jnp.ndarray:
         predictions (jnp.ndarray): Predictions from the model.
         targets (jnp.ndarray): Targets for the model.
     Returns:
-        Reconstruction loss (jnp.ndarray).
+        Reconstruction loss.
     """
     l1 = predictions - targets
     l2 = (predictions - targets) ** 2
@@ -43,7 +43,7 @@ def mape_loss(predictions: jnp.ndarray, targets: jnp.ndarray) -> jnp.ndarray:
         predictions (jnp.ndarray): Predictions from the model.
         targets (jnp.ndarray): Targets for the model.
     Returns:
-        Reconstruction loss (jnp.ndarray).
+        Reconstruction loss.
     """
     return jnp.abs((targets - predictions) / targets)
 
@@ -55,7 +55,7 @@ def disc_loss_vanilla(real: jnp.ndarray, fake: jnp.ndarray) -> jnp.ndarray:
         real: Real images, received from dataset.
         fake: Fake images, produced by generator.
     Returns:
-        Discriminator loss (jnp.ndarray).
+        Discriminator loss.
     """
     real_loss = jnp.mean(jax.nn.softplus(-real))
     generated_loss = jnp.mean(jax.nn.softplus(fake))
@@ -69,7 +69,7 @@ def disc_loss_hinge(real: jnp.ndarray, fake: jnp.ndarray) -> jnp.ndarray:
         real: Real images, received from dataset.
         fake: Fake images, produced by generator.
     Returns:
-        Discriminator loss (jnp.ndarray).
+        Discriminator loss.
     """
     real_loss = jnp.mean(jnp.maximum(1.0 - real, 0.0))
     loss_fake = jnp.mean(jnp.maximum(1.0 + fake, 0.0))

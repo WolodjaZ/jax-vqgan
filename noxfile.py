@@ -17,7 +17,8 @@ def _install_test_dependencies(session):
 
 
 def _install_doc_dependencies(session):
-    session.install("mkdocs==1.3.1", "mkdocstrings==0.19.0")
+    session.install("mkdocs==1.4.2", "mkdocs-material==8.5.1")
+    session.install("mkdocstrings==0.19.0", "mkdocstrings-python==0.8.2")
 
 
 @nox.session(python=SUPPORTED_PY_VERSIONS)

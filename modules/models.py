@@ -118,9 +118,7 @@ class ResNetBlock(nn.Module):
             self.temb_proj = nn.Dense(self.out_channels_, dtype=self.dtype)
 
         # Second block
-        self.block2_pre = nn.Sequential(
-            [nn.GroupNorm(num_groups=32, epsilon=1e-6), self.act_fn]
-        )
+        self.block2_pre = nn.Sequential([nn.GroupNorm(num_groups=32, epsilon=1e-6), self.act_fn])
         self.block2_drop = nn.Dropout(self.dropout_prob)
         self.bloc2_conv = nn.Conv(
             self.out_channels_,
@@ -163,7 +161,7 @@ class ResNetBlock(nn.Module):
             temb (Optional[int], optional): temporal embedding. Defaults to None.
             deterministic (bool, optional): deterministic flag. Defaults to True.
         Returns:
-            jnp.ndarray: output tensor with the out_channels dimension as the last dimension (C).
+            output tensor with the out_channels dimension as the last dimension (C).
         """
         residual = x
         x = self.block1(x)
@@ -200,7 +198,7 @@ class AttnBlock(nn.Module):
         Args:
             x (jnp.ndarray): input tensor.
         Returns:
-            jnp.ndarray: output tensor with the same shape as the input.
+            output tensor with the same shape as the input.
         """
         h_ = x
         h_ = nn.GroupNorm(num_groups=32, epsilon=1e-6)(h_)
@@ -299,9 +297,7 @@ class UpsamplingBlock(nn.Module):
             block_in = block_out
             # check if we need to add attention block based on configs
             if self.curr_res in self.config.attn_resolutions:
-                assert (
-                    block_in % 32 == 0
-                ), "block_in must be divisible by 32 for GroupNorm"
+                assert block_in % 32 == 0, "block_in must be divisible by 32 for GroupNorm"
                 attn_blocks.append(AttnBlock(block_in, dtype=self.dtype))
 
         self.blocks = res_blocks
@@ -310,9 +306,7 @@ class UpsamplingBlock(nn.Module):
         # upsample if not first block
         self.upsample = None
         if self.block_idx != 0:
-            self.upsample = Upsample(
-                block_in, self.config.resamp_with_conv, dtype=self.dtype
-            )
+            self.upsample = Upsample(block_in, self.config.resamp_with_conv, dtype=self.dtype)
 
     def __call__(
         self, x: jnp.ndarray, temb: Optional[int] = None, deterministic: bool = True
@@ -381,9 +375,7 @@ class DownsamplingBlock(nn.Module):
             block_in = block_out
             # check if we need to add attention block based on configs
             if self.curr_res in self.config.attn_resolutions:
-                assert (
-                    block_in % 32 == 0
-                ), "block_in must be divisible by 32 for GroupNorm"
+                assert block_in % 32 == 0, "block_in must be divisible by 32 for GroupNorm"
                 attn_blocks.append(AttnBlock(block_in, dtype=self.dtype))
 
         self.blocks = res_blocks
@@ -392,9 +384,7 @@ class DownsamplingBlock(nn.Module):
         # downsample if not last block
         self.downsample = None
         if self.block_idx != self.config.num_resolutions - 1:
-            self.downsample = Downsample(
-                block_in, self.config.resamp_with_conv, dtype=self.dtype
-            )
+            self.downsample = Downsample(block_in, self.config.resamp_with_conv, dtype=self.dtype)
 
     def __call__(
         self, x: jnp.ndarray, temb: Optional[int] = None, deterministic: bool = True
@@ -446,9 +436,7 @@ class MidBlock(nn.Module):
             temb (Optional[int], optional): temporal embedding. Defaults to None.
             deterministic (bool, optional): deterministic flag. Defaults to True.
         """
-        assert (
-            self.in_channels % 32 == 0
-        ), "block_in must be divisible by 32 for GroupNorm"
+        assert self.in_channels % 32 == 0, "block_in must be divisible by 32 for GroupNorm"
         x = ResNetBlock(
             self.in_channels,
             self.in_channels,
@@ -517,9 +505,7 @@ class Encoder(nn.Module):
             )
 
             # update resolution if not bottleneck
-            curr_res = (
-                curr_res // 2 if i != self.config.num_resolutions - 1 else curr_res
-            )
+            curr_res = curr_res // 2 if i != self.config.num_resolutions - 1 else curr_res
         # middle
         mid_channels = self.config.ch * self.config.ch_mult[-1]
         x = MidBlock(
@@ -534,9 +520,7 @@ class Encoder(nn.Module):
         x = nn.GroupNorm(num_groups=32, dtype=self.dtype)(x)
         x = self.act_fn(x)
         x = nn.Conv(
-            2 * self.config.z_channels
-            if self.config.double_z
-            else self.config.z_channels,
+            2 * self.config.z_channels if self.config.double_z else self.config.z_channels,
             kernel_size=(3, 3),
             strides=(1, 1),
             padding=((1, 1), (1, 1)),
@@ -607,9 +591,7 @@ class Decoder(nn.Module):
             )
 
             # update resolution if not end
-            curr_res = (
-                curr_res * 2 if i != self.config.num_resolutions - 1 else curr_res
-            )
+            curr_res = curr_res * 2 if i != self.config.num_resolutions - 1 else curr_res
 
         # end
         if self.config.give_pre_end:

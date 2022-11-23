@@ -1,0 +1,19 @@
+site_name: VQGAN JAX/Flax Docs
+repo_url: https://github.com/WolodjaZ/jax-vqgan
+
+theme:
+  name: "material"
+
+plugins:
+  - mkdocstrings
+
+nav:
+  - Welcome to Docs 👋: index.md
+  - Tutorials 🙇: tutorials.md
+  - How-To Guides 📚: how-to-guides.md
+  - reference.md
+  - Explanation 🤯: explanation.md
+  - Changelog ⏳: changelog.md
+
+watch:
+  - .  # reload docs for any file changes

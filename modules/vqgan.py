@@ -263,7 +263,7 @@ class VQModule(nn.Module):
         Args:
             x (jnp.ndarray): the input to the encoder.
         Returns:
-            Tuple[jnp.ndarray, float, jnp.ndarray]: the encoded input, the loss and the indices.
+            the encoded input, the loss and the indices.
         """
         # Encoder
         z = self.encoder(x, deterministic=deterministic)
@@ -283,7 +283,7 @@ class VQModule(nn.Module):
             deterministic (bool, optional): for Dropout. Defaults to True.
 
         Returns:
-            jnp.ndarray: the reconstructed image.
+            the reconstructed image.
         """
         # Post-quantizer
         z_q = self.post_quantizer(z_q)
@@ -304,7 +304,7 @@ class VQModule(nn.Module):
         Args:
             temperature (float): the new temperature of the Gumbel-Softmax distribution
         Returns:
-            float: the new temperature of the Gumbel-Softmax distribution
+            the new temperature of the Gumbel-Softmax distribution
         """
         self.quantizer.config.gumb_temp = temperature
         return self.quantizer.config.gumb_temp
@@ -321,7 +321,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
     """An abstract class to handle weights initialization and a simple interface
     for downloading and loading pretrained models.
 
-    Arguments:
+    Attributes:
         module_class (nn.Module): a class derived from nn.Module
             that defines the model's core computation.
         config_class (PretrainedConfig): a class derived from PretrainedConfig
@@ -378,7 +378,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
             params (FrozenDict, optional): the params of the model. Defaults to None.
 
         Returns:
-            FrozenDict: initialized params of the model.
+            initialized params of the model.
         """
         # initialize model
         input_x = jnp.zeros(input_shape, dtype=self.dtype)
@@ -443,7 +443,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
             train (bool, optional): Training or inference mode. Defaults to False.
 
         Returns:
-            jnp.ndarray: the decoded image.
+            the decoded image.
         """
         # Handle any PRNG if needed
         rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
@@ -470,7 +470,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
             params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
 
         Returns:
-            jnp.ndarray: the decoded image from indices.
+            the decoded image from indices.
         """
         return self.module.apply(
             {"params": params or self.params},
@@ -485,7 +485,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
             temperature (float): the temperature to update to.
             params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
         Returns:
-            float: the updated temperature.
+            the updated temperature.
         """
         new_temperature = self.module.apply(
             {"params": params or self.params},
@@ -513,7 +513,6 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
             train (bool, optional): Training or inference mode. Defaults to False.
 
         Returns:
-            Tuple[jnp.ndarray, jnp.ndarray, float, jnp.ndarray]:
                 the encoded latent vector,
                 the decoded image,
                 the log prob of the latent vector,
@@ -543,7 +542,7 @@ class NLayerDiscriminator(nn.Module):
     See:
         https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/models/networks.py
 
-    Arguments:
+    Attributes:
         ndf (int): the number of filters in the last conv layer
         n_layers (int): the number of conv layers in the discriminator
         output_dim (bool): dim of output the last channel of the discriminator
@@ -607,7 +606,7 @@ class NLayerDiscriminator(nn.Module):
 class VQGanDiscriminator(FlaxPreTrainedModel):
     """VQGAN discriminator model.
 
-    Arguments:
+    Attributes:
         module_class (nn.Module): the discriminator module class (NLayerDiscriminator).
     """
 
