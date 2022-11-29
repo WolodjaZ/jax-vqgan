@@ -2,6 +2,7 @@
 
 This README is a very short. **To learn everything you need to know about this repo, see our [full documentation](https://wolodjaz.github.io/jax-vqgan/)**
 
+[![pdm-managed](https://img.shields.io/badge/pdm-managed-blueviolet)](https://pdm.fming.dev) [![Docs](https://img.shields.io/badge/Docs-mkdocs-blue?style=flat)](https://squidfunk.github.io/mkdocs-material/) ![Github Actions](https://github.com/pdm-project/pdm/workflows/Tests/badge.svg)
 ## TODO list
 
 - [ ] Full train and test pipeline 😛. I don't have a GPU for such a task so if anyone would like to lend me a GPU or try to do it themselves and give feedback and results I would be delighted 👌.

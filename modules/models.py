@@ -79,7 +79,7 @@ class ResNetBlock(nn.Module):
             If None, the output channels will be the same as the input channels.
         act_fn (Callable): activation function.
         use_conv_shortcut (bool): whether to use a convolutional shortcut.
-        temb_channels (int): number of channels in the temporal embedding.
+        temb_channels (jnp.ndarray): number of channels in the temporal embedding.
         dropout_prob (float): dropout probability.
         dtype (jnp.dtype): the dtype of the computation (default: float32).
     """
@@ -268,10 +268,11 @@ class UpsamplingBlock(nn.Module):
     def setup(self):
         # get input numb of channels based on config and current block index.
         # Looking in reverse on self.config.ch_mult variable.
+        block_in: int = self.config.ch
         if self.block_idx == self.config.num_resolutions - 1:
-            block_in: int = self.config.ch * self.config.ch_mult[-1]
+            block_in *= self.config.ch_mult[-1]
         else:
-            block_in: int = self.config.ch * self.config.ch_mult[self.block_idx + 1]
+            block_in *= self.config.ch_mult[self.block_idx + 1]
 
         # get output numb of channels based on config and current block index
         block_out: int = self.config.ch * self.config.ch_mult[self.block_idx]
@@ -309,12 +310,12 @@ class UpsamplingBlock(nn.Module):
             self.upsample = Upsample(block_in, self.config.resamp_with_conv, dtype=self.dtype)
 
     def __call__(
-        self, x: jnp.ndarray, temb: Optional[int] = None, deterministic: bool = True
+        self, x: jnp.ndarray, temb: Optional[jnp.ndarray] = None, deterministic: bool = True
     ) -> jnp.ndarray:
         """Forward pass of the block.
         Args:
             x (jnp.ndarray): input tensor.
-            temb (Optional[int], optional): temporal embedding. Defaults to None.
+            temb (Optional[jnp.ndarray], optional): temporal embedding. Defaults to None.
             deterministic (bool, optional): deterministic flag. Defaults to True.
         """
         assert temb is None, "UpsamplingBlock don't use temporal embedding"
@@ -349,7 +350,7 @@ class DownsamplingBlock(nn.Module):
 
     def setup(self):
         # get input and output numb of channels based on config and current block index.
-        in_ch_mult: Tuple[int] = (1,) + tuple(self.config.ch_mult)
+        in_ch_mult: Tuple[int, ...] = (1,) + tuple(self.config.ch_mult)
         block_in: int = self.config.ch * in_ch_mult[self.block_idx]
         block_out: int = self.config.ch * self.config.ch_mult[self.block_idx]
 
@@ -387,12 +388,12 @@ class DownsamplingBlock(nn.Module):
             self.downsample = Downsample(block_in, self.config.resamp_with_conv, dtype=self.dtype)
 
     def __call__(
-        self, x: jnp.ndarray, temb: Optional[int] = None, deterministic: bool = True
+        self, x: jnp.ndarray, temb: Optional[jnp.ndarray] = None, deterministic: bool = True
     ) -> jnp.ndarray:
         """Forward pass of the block.
         Args:
             x (jnp.ndarray): input tensor.
-            temb (Optional[int], optional): temporal embedding. Defaults to None.
+            temb (Optional[jnp.ndarray], optional): temporal embedding. Defaults to None.
             deterministic (bool, optional): deterministic flag. Defaults to True.
         """
         assert temb is None, "DownsamplingBlock don't use temporal embedding"
@@ -427,13 +428,13 @@ class MidBlock(nn.Module):
 
     @nn.compact
     def __call__(
-        self, x: jnp.ndarray, temb: Optional[int] = None, deterministic: bool = True
+        self, x: jnp.ndarray, temb: Optional[jnp.ndarray] = None, deterministic: bool = True
     ) -> jnp.ndarray:
         """BxWxHxC --ResNet--> BxWxHxC --Attn--> BxWxHxC --ResNet--> BxWxHxC
 
         Args:
             x (jnp.ndarray): input tensor.
-            temb (Optional[int], optional): temporal embedding. Defaults to None.
+            temb (Optional[jnp.ndarray], optional): temporal embedding. Defaults to None.
             deterministic (bool, optional): deterministic flag. Defaults to True.
         """
         assert self.in_channels % 32 == 0, "block_in must be divisible by 32 for GroupNorm"
@@ -488,7 +489,7 @@ class Encoder(nn.Module):
     def __call__(self, x: jnp.ndarray, deterministic: bool = True) -> jnp.ndarray:
         # time embedding
         temb_ch: int = 0
-        temb: Optional[int] = None
+        temb: Optional[jnp.ndarray] = None
 
         # downsampling
         x = nn.Conv(
@@ -559,7 +560,7 @@ class Decoder(nn.Module):
     def __call__(self, z: jnp.ndarray, deterministic: bool = True) -> jnp.ndarray:
         # time embedding
         temb_ch: int = 0
-        temb: Optional[int] = None
+        temb: Optional[jnp.ndarray] = None
 
         # compute in_ch_mult and block_in at lowest res
         block_in = self.config.ch * self.config.ch_mult[self.config.num_resolutions - 1]

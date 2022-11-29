@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Optional, Set, Tuple, Union
 
 import flax.linen as nn
 import jax
@@ -98,7 +98,7 @@ class VectorQuantizer(nn.Module):
 
     @staticmethod
     def get_codebook_entry(
-        params: FrozenDict, indices: jnp.ndarray, shape: Optional[Tuple[int]] = None
+        params: FrozenDict, indices: jnp.ndarray, shape: Optional[Tuple[int, ...]] = None
     ) -> jnp.ndarray:
         """Get the codebook entry for a given index.
         Input is expected to be of shape (batch, num_tokens)"""
@@ -193,7 +193,7 @@ class GumbelQuantize(nn.Module):
 
     @staticmethod
     def get_codebook_entry(
-        params: FrozenDict, indices: jnp.ndarray, shape: Optional[Tuple[int]] = None
+        params: FrozenDict, indices: jnp.ndarray, shape: Optional[Tuple[int, ...]] = None
     ) -> jnp.ndarray:
         """Get the codebook entry for a given index.
         Input is expected to be of shape (batch, num_tokens)"""
@@ -229,7 +229,7 @@ class VQModule(nn.Module):
     def setup(self):
         """Setup the VQ-VAE module."""
         # Set activation function
-        act_fn: Callable = ACTFUN[self.config.act_name]
+        act_fn: Callable = ACTFUN[self.config.act_name]  # type: ignore
         # Encoder
         self.encoder = Encoder(self.config, act_fn=act_fn, dtype=self.dtype)
         # Map last channel of encoder to embedding dim for VQ
@@ -241,6 +241,7 @@ class VQModule(nn.Module):
             dtype=self.dtype,
         )
         # Which quantizer to use
+        self.quantizer: Union[VectorQuantizer, GumbelQuantize]
         if self.config.use_gumbel:
             self.quantizer = GumbelQuantize(self.config, dtype=self.dtype)
         else:
@@ -328,8 +329,8 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
 
     """
 
-    module_class: nn.Module = None
-    config_class: PretrainedConfig = None
+    module_class: nn.Module
+    config_class: PretrainedConfig
 
     def __init__(
         self,
@@ -351,10 +352,10 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
             _do_init (bool, optional): whether to initialize the model. Defaults to True.
         """
         self._missing_keys: Set[str] = set()
-        assert isinstance(
-            config, self.config_class
-        ), f"""config: {config} has to be an instance
-                                                            of {self.config_class}"""
+        if not isinstance(config, self.config_class):
+            raise ValueError(f"config: {config} has to be an instance of {self.config_class}")
+        if self.module_class is None:
+            raise NotImplementedError("module_class should be defined in derived classes")
         module = self.module_class(config=config, dtype=dtype, **kwargs)
         self.seed = seed
         self.dtype = dtype
@@ -368,12 +369,15 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         )
 
     def init_weights(
-        self, rng: jax.random.PRNGKey, input_shape: Tuple, params: FrozenDict = None
-    ) -> FrozenDict:
+        self,
+        rng: Union[Any, jnp.ndarray],
+        input_shape: Tuple,
+        params: Optional[FrozenDict[str, Any]] = None,
+    ) -> FrozenDict[str, Any]:
         """Initialize the weights of the model. Get the params
 
         Args:
-            rng (jax.random.PRNGKey): the random number generator.
+            rng (Union[Any,jnp.ndarray]): the random number generator.
             input_shape (Tuple): the input shape of the model.
             params (FrozenDict, optional): the params of the model. Defaults to None.
 
@@ -383,7 +387,11 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         # initialize model
         input_x = jnp.zeros(input_shape, dtype=self.dtype)
         params_rng, dropout_rng, gumble_rng = jax.random.split(rng, num=3)
-        rngs = {"params": params_rng, "dropout": dropout_rng, "gumbel": gumble_rng}
+        rngs: Dict[str, Union[Any, jnp.ndarray]] = {
+            "params": params_rng,
+            "dropout": dropout_rng,
+            "gumbel": gumble_rng,
+        }
 
         random_params = self.module.init(rngs, input_x, True)["params"]
 
@@ -392,7 +400,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
             random_params = flatten_dict(unfreeze(random_params))
             params = flatten_dict(unfreeze(params))
             for missing_key in self._missing_keys:
-                params[missing_key] = random_params[missing_key]
+                params[missing_key] = random_params[missing_key]  # type: ignore
             self._missing_keys = set()
             return freeze(unflatten_dict(params))
         else:
@@ -402,20 +410,22 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         self,
         pixel_values: jnp.ndarray,
         params: Optional[FrozenDict] = None,
-        dropout_rng: Optional[jax.random.PRNGKey] = None,
-        gumble_rng: Optional[jax.random.PRNGKey] = None,
+        dropout_rng: Optional[Union[Any, jnp.ndarray]] = None,
+        gumble_rng: Optional[Union[Any, jnp.ndarray]] = None,
         train: bool = False,
     ) -> Tuple[jnp.ndarray, float, jnp.ndarray]:
         """Encode the input.
         Args:
             pixel_values (jnp.ndarray): the input to the encoder.
             params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
-            dropout_rng (Optional[jax.random.PRNGKey], optional): the dropout rng. Defaults to None.
-            gumble_rng (Optional[jax.random.PRNGKey], optional): the gumbel rng. Defaults to None.
+            dropout_rng (Union[Any,jnp.ndarray], optional): the dropout rng. Defaults to None.
+            gumble_rng (Union[Any,jnp.ndarray], optional): the gumbel rng. Defaults to None.
             train (bool, optional): Training or inference mode. Defaults to False.
         """
         # Handle any PRNG if needed
-        rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
+        rngs: Dict[str, Union[Any, jnp.ndarray]] = (
+            {"dropout": dropout_rng} if dropout_rng is not None else {}
+        )
         rngs["gumbel"] = gumble_rng if gumble_rng is not None else {}
         return self.module.apply(
             {"params": params or self.params},
@@ -429,8 +439,8 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         self,
         z: jnp.ndarray,
         params: Optional[FrozenDict] = None,
-        dropout_rng: Optional[jax.random.PRNGKey] = None,
-        gumble_rng: Optional[jax.random.PRNGKey] = None,
+        dropout_rng: Optional[Union[Any, jnp.ndarray]] = None,
+        gumble_rng: Optional[Union[Any, jnp.ndarray]] = None,
         train: bool = False,
     ) -> jnp.ndarray:
         """Decode the latent vector.
@@ -438,15 +448,17 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         Args:
             z (jnp.ndarray): the latent vector.
             params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
-            dropout_rng (Optional[jax.random.PRNGKey], optional): the dropout rng. Defaults to None.
-            gumble_rng (Optional[jax.random.PRNGKey], optional): the gumbel rng. Defaults to None.
+            dropout_rng (Union[Any,jnp.ndarray], optional): the dropout rng. Defaults to None.
+            gumble_rng (Union[Any,jnp.ndarray], optional): the gumbel rng. Defaults to None.
             train (bool, optional): Training or inference mode. Defaults to False.
 
         Returns:
             the decoded image.
         """
         # Handle any PRNG if needed
-        rngs = {"dropout": dropout_rng} if dropout_rng is not None else {}
+        rngs: Dict[str, Union[Any, jnp.ndarray]] = (
+            {"dropout": dropout_rng} if dropout_rng is not None else {}
+        )
         rngs["gumbel"] = gumble_rng if gumble_rng is not None else {}
         return self.module.apply(
             {"params": params or self.params},
@@ -498,8 +510,8 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         self,
         pixel_values: jnp.ndarray,
         params: Optional[FrozenDict] = None,
-        dropout_rng: Optional[jax.random.PRNGKey] = None,
-        gumble_rng: Optional[jax.random.PRNGKey] = None,
+        dropout_rng: Optional[jnp.ndarray] = None,
+        gumble_rng: Optional[jnp.ndarray] = None,
         train: bool = False,
     ) -> Tuple[jnp.ndarray, jnp.ndarray, float, jnp.ndarray]:
         """Encode and decode the input.
@@ -507,8 +519,8 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
         Args:
             pixel_values (jnp.ndarray): the input to the encoder.
             params (Optional[FrozenDict], optional): the params of the model. Defaults to None.
-            dropout_rng (Optional[jax.random.PRNGKey], optional): the dropout rng. Defaults to None.
-            gumble_rng (Optional[jax.random.PRNGKey], optional): the gumbel rng. Defaults to None.
+            dropout_rng (Optional[jnp.ndarray], optional): the dropout rng. Defaults to None.
+            gumble_rng (Optional[jnp.ndarray], optional): the gumbel rng. Defaults to None.
                 If gumble_rng is None then the defult rng is used and produce deterministic results.
             train (bool, optional): Training or inference mode. Defaults to False.
 
@@ -533,7 +545,7 @@ class VQGANPreTrainedModel(FlaxPreTrainedModel):
 class VQModel(VQGANPreTrainedModel):
     """VQ-VAE model from pre-trained VQGAN."""
 
-    module_class = VQModule
+    module_class = VQModule  # type: ignore
     config_class = VQGANConfig
 
 
@@ -610,7 +622,7 @@ class VQGanDiscriminator(FlaxPreTrainedModel):
         module_class (nn.Module): the discriminator module class (NLayerDiscriminator).
     """
 
-    module_class: nn.Module = NLayerDiscriminator
+    module_class: nn.Module = NLayerDiscriminator  # type: ignore
 
     def __init__(
         self,
@@ -640,10 +652,10 @@ class VQGanDiscriminator(FlaxPreTrainedModel):
 
     def init_weights(
         self,
-        params_rng: jax.random.PRNGKey,
+        params_rng: jnp.ndarray,
         input_shape: Tuple,
-        params: FrozenDict = None,
-    ) -> FrozenDict:
+        params: Optional[FrozenDict[str, Any]] = None,
+    ) -> FrozenDict[str, Any]:
         # initialize model
         input_x = jnp.zeros(input_shape, dtype=self.dtype)
         random_params = self.module.init(params_rng, input_x, True)
@@ -653,7 +665,7 @@ class VQGanDiscriminator(FlaxPreTrainedModel):
             random_params = flatten_dict(unfreeze(random_params))
             params = flatten_dict(unfreeze(params))
             for missing_key in self._missing_keys:
-                params[missing_key] = random_params[missing_key]
+                params[missing_key] = random_params[missing_key]  # type: ignore
             self._missing_keys = set()
             return freeze(unflatten_dict(params))
         else:

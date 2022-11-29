@@ -149,7 +149,7 @@ class TrainConfig:
     log_dir: str
     check_val_every_n_epoch: int
     log_img_every_n_epoch: int
-    input_shape: Tuple[int, int, int]
+    input_shape: Tuple[int, ...]
     codebook_weight: float
     monitor: str
     recon_loss: str
@@ -248,12 +248,8 @@ class DataConfig:
 
     def __post_init__(self):
         # set train_params and test_params
-        self.train_params = (
-            DataParams(**self.train_params) if self.train_params is not None else DataParams()
-        )
-        self.test_params = (
-            DataParams(**self.test_params) if self.test_params is not None else DataParams()
-        )
+        self.train_params = DataParams(**self.train_params)  # type: ignore
+        self.test_params = DataParams(**self.test_params)  # type: ignore
 
 
 @dataclass
@@ -270,8 +266,12 @@ class LoadConfig:
     data: DataConfig
 
     def __post_init__(self):
-        self.train = TrainConfig(**self.train) if self.train is not None else TrainConfig()
-        self.data = DataConfig(**self.data) if self.data is not None else DataConfig()
+        self.train = (
+            TrainConfig(**self.train) if self.train is not None else TrainConfig()  # type: ignore
+        )
+        self.data = (
+            DataConfig(**self.data) if self.data is not None else DataConfig()  # type: ignore
+        )
 
         # set resolution
         self.train.disc_hparams.resolution = self.data.size
