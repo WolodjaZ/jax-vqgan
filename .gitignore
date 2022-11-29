@@ -2,6 +2,9 @@
 notebooks/*
 !notebooks/*.ipynb
 
+# PDM
+.pdm.toml
+
 # Loggin
 outputs/
 
