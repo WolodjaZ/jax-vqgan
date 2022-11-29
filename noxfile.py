@@ -63,6 +63,10 @@ def lint(session: nox.Session) -> None:
         "--show-source",
         "--statistics",
         "--max-line-length=100",
+        "modules",
+        "tests",
+        "noxfile.py",
+        "train.py",
     )
 
 
