@@ -2,7 +2,7 @@ import logging
 import os
 from collections import defaultdict
 from functools import partial
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class GenerateCallback:
     """Callback that generates and logs images during training."""
 
-    def __init__(self, input_imgs: Any, rng: jax.random.PRNGKey, every_n_epochs: int = 1):
+    def __init__(self, input_imgs: Any, rng: Union[Any, jnp.ndarray], every_n_epochs: int = 1):
         """Initialize the callback.
 
         Args:
@@ -81,6 +81,7 @@ class TrainerModule:
         self.eval_key = module_config.monitor
         self.main_rng = jax.random.PRNGKey(self.module_config.seed)
         self.generate_callback: Optional[GenerateCallback] = None
+        self.generator_callback_rng: Union[Any, jnp.ndarray]
         self.main_rng, self.generator_callback_rng = jax.random.split(self.main_rng)
         # Set model name
         self.model_name = self.module_config.model_name
@@ -190,7 +191,7 @@ class TrainerModule:
             # ensure that model have actual parameters
             self.model.params = self.state.params
             batch_metrics: Dict[str, float]
-            self.state, self.main_rng, batch_metrics = self.train_step(
+            self.state, self.main_rng, batch_metrics = self.train_step(  # type: ignore
                 state=self.state,
                 batch=batch,
                 rng=self.main_rng,
@@ -203,10 +204,11 @@ class TrainerModule:
         metrics = {key: metrics[key] / count for key in metrics}
         return metrics
 
+    @staticmethod
     def train_step(
         state: train_state.TrainState,
         batch: Any,
-        rng: jax.random.PRNGKey,
+        rng: Union[Any, jnp.ndarray],
         distributed: bool = False,
         *args,
         **kwargs,
@@ -216,25 +218,26 @@ class TrainerModule:
         Args:
             state (TrainState): Current training state.
             batch (Any): Batch of data.
-            rng (jax.random.PRNGKey): Random number generator.
+            rng (Union[Any, jnp.ndarray]): Random number generator.
             distributed (bool, optional): Whether to use distributed training. Defaults to False.
         Returns:
             Updated training states, rng and metrics.
         """
         raise NotImplementedError
 
+    @staticmethod
     def eval_step(
         state: train_state.TrainState,
         batch: Any,
-        rng: jax.random.PRNGKey,
+        rng: Union[Any, jnp.ndarray],
         *args,
         **kwargs,
-    ) -> Tuple[jax.random.PRNGKey, Dict[str, float]]:
+    ) -> Tuple[Union[Any, jnp.ndarray], Dict[str, float]]:
         """Evaluate model on a single batch.
         Args:
             state (TrainState): Current training state.
             batch (Any): Batch of data.
-            rng (jax.random.PRNGKey): Random number generator.
+            rng (Union[Any, jnp.ndarray]): Random number generator.
         Returns:
             New rng and metrics.
 
@@ -252,7 +255,7 @@ class TrainerModule:
         count = 0
         for batch in tqdm(data_loader(), desc="Evaluating", leave=False):
             batch_metrics: Dict[str, float]
-            self.main_rng, batch_metrics = self.eval_step(
+            self.main_rng, batch_metrics = self.eval_step(  # type: ignore
                 state=self.state, batch=batch, rng=self.main_rng
             )
             batch_size = (batch[0] if isinstance(batch, (tuple, list)) else batch).shape[0]
@@ -468,7 +471,7 @@ class TrainerVQGan(TrainerModule):
         new_temp: float = self.temperature_scheduling(epoch - 1)
         for batch in tqdm(data_loader(), desc="Training", leave=False):
             batch_metrics: Dict[str, float]
-            self.state, self.state_disc, self.main_rng, batch_metrics = self.train_step(
+            train_outs = self.train_step(  # type: ignore
                 state=self.state,
                 disc_state=self.state_disc,
                 batch=batch,
@@ -477,13 +480,14 @@ class TrainerVQGan(TrainerModule):
                 disc_use=self.module_config.disc_start > epoch,
                 distributed=self.module_config.distributed,
             )
+            self.state, self.state_disc, self.main_rng, batch_metrics = train_outs
             # Update metrics
             for key, value in batch_metrics.items():
                 metrics[key] += value
 
             if self.module_config.disc_start > epoch:
                 batch_metrics_disc: Dict[str, float]
-                (self.state, self.state_disc, self.main_rng, batch_metrics_disc,) = self.train_step(
+                train_outs = self.train_step(  # type: ignore
                     state=self.state,
                     disc_state=self.state_disc,
                     batch=batch,
@@ -492,6 +496,7 @@ class TrainerVQGan(TrainerModule):
                     disc_use=True,
                     distributed=self.module_config.distributed,
                 )
+                self.state, self.state_disc, self.main_rng, batch_metrics_disc = train_outs
                 # Update metrics discriminator
                 for key, value in batch_metrics_disc.items():
                     metrics_disc[key] += value
@@ -525,13 +530,10 @@ class TrainerVQGan(TrainerModule):
             params: FrozenDict[str, Any],
             batch: jnp.ndarray,
             train: bool,
-            rng: jax.random.PRNGKey,
+            rng: Union[Any, jnp.ndarray],
             disc_use: bool,
             disc_variables: TrainStateDisc,
-        ) -> Tuple[
-            jnp.ndarray,
-            Tuple[Dict[str, float], jax.random.PRNGKey, Optional[FrozenDict[str, Any]]],
-        ]:
+        ) -> Tuple[Any, Tuple[Dict[str, Any], Union[Any, jnp.ndarray], Any]]:
             """Function to calculate the loss autoencoder for a batch of images."""
             new_rng, gumble_apply_rng, dropout_apply_rng = jax.random.split(rng, num=3)
             outs = self.model(
@@ -585,11 +587,11 @@ class TrainerVQGan(TrainerModule):
             params: FrozenDict[str, Any],
             batch: jnp.ndarray,
             train: bool,
-            rng: jax.random.PRNGKey,
+            rng: Union[Any, jnp.ndarray],
             disc_use: bool,
             batch_stats: FrozenDict[str, Any],
             model_params: Optional[FrozenDict[str, Any]],
-        ) -> Tuple[jnp.ndarray, Tuple[Dict[str, float], jax.random.PRNGKey, FrozenDict[str, Any]]]:
+        ) -> Tuple[Any, Tuple[Dict[str, Any], Union[Any, jnp.ndarray], Any]]:
             """Function to calculate the loss discriminator for a batch of images."""
             new_rng, gumble_apply_rng, dropout_apply_rng = jax.random.split(rng, num=3)
             outs = self.model(
@@ -622,10 +624,12 @@ class TrainerVQGan(TrainerModule):
             state: train_state.TrainState,
             disc_state: TrainStateDisc,
             batch: jnp.ndarray,
-            rng: jax.random.PRNGKey,
+            rng: Union[Any, jnp.ndarray],
             disc_use: bool,
             distributed: bool = False,
-        ) -> Tuple[train_state.TrainState, TrainStateDisc, jax.random.PRNGKey, Dict[str, float]]:
+        ) -> Tuple[
+            train_state.TrainState, TrainStateDisc, Union[Any, jnp.ndarray], Dict[str, float]
+        ]:
             """Train step for autoencoder."""
             loss_fn = partial(
                 calculate_loss_autoencoder,
@@ -649,10 +653,12 @@ class TrainerVQGan(TrainerModule):
             state: train_state.TrainState,
             disc_state: TrainStateDisc,
             batch: jnp.ndarray,
-            rng: jax.random.PRNGKey,
+            rng: Union[Any, jnp.ndarray],
             disc_use: bool,
             distributed: bool = False,
-        ) -> Tuple[train_state.TrainState, TrainStateDisc, jax.random.PRNGKey, Dict[str, float]]:
+        ) -> Tuple[
+            train_state.TrainState, TrainStateDisc, Union[Any, jnp.ndarray], Dict[str, float]
+        ]:
             """Train step for discriminator."""
             loss_fn = partial(
                 calculate_loss_disc,
@@ -679,11 +685,13 @@ class TrainerVQGan(TrainerModule):
             state: train_state.TrainState,
             disc_state: TrainStateDisc,
             batch: jnp.ndarray,
-            rng: jax.random.PRNGKey,
+            rng: Union[Any, jnp.ndarray],
             optimizer_idx: int,
             disc_use: bool,
             distributed: bool,
-        ) -> Tuple[train_state.TrainState, TrainStateDisc, jax.random.PRNGKey, Dict[str, float]]:
+        ) -> Tuple[
+            train_state.TrainState, TrainStateDisc, Union[Any, jnp.ndarray], Dict[str, float]
+        ]:
             """Train model on a single batch."""
             # calculate loss
             if optimizer_idx == 0:
@@ -712,8 +720,8 @@ class TrainerVQGan(TrainerModule):
             state: train_state.TrainState,
             batch: jnp.ndarray,
             disc_state: TrainStateDisc,
-            rng: jax.random.PRNGKey,
-        ) -> Tuple[jax.random.PRNGKey, Dict[str, float]]:
+            rng: Union[Any, jnp.ndarray],
+        ) -> Tuple[Union[Any, jnp.ndarray], Dict[str, float]]:
             """Evaluate model on a single batch."""
             _, (metrics, new_rng, _) = calculate_loss_autoencoder(
                 state.params,
@@ -727,10 +735,10 @@ class TrainerVQGan(TrainerModule):
 
         # pmap or jit for efficiency
         if self.module_config.distributed:
-            self.train_step = jax.pmap(
+            self.train_step = jax.pmap(  # type: ignore
                 train_step, axis_name="batch", static_broadcasted_argnums=(4, 5, 6)
             )
-            self.eval_step = jax.jit(partial(eval_step, disc_state=self.state_disc))
+            self.eval_step = jax.jit(partial(eval_step, disc_state=self.state_disc))  # type: ignore
         else:
-            self.train_step = jax.jit(train_step, static_argnums=(4, 5, 6))
-            self.eval_step = jax.jit(partial(eval_step, disc_state=self.state_disc))
+            self.train_step = jax.jit(train_step, static_argnums=(4, 5, 6))  # type: ignore
+            self.eval_step = jax.jit(partial(eval_step, disc_state=self.state_disc))  # type: ignore

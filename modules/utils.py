@@ -412,7 +412,7 @@ class VQGanImageProcessor:
         self,
         images: Union[Image.Image, np.ndarray, List[Image.Image], List[np.ndarray]],
         do_resize: Optional[bool] = None,
-        size: Dict[str, int] = None,
+        size: Optional[Dict[str, int]] = None,
         resample: Optional[Image.Resampling] = None,
         do_rescale: Optional[bool] = None,
         rescale_factor: Optional[float] = None,
