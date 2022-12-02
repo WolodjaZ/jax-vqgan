@@ -4,6 +4,7 @@ notebooks/*
 
 # PDM
 .pdm.toml
+pdm.toml
 
 # Loggin
 outputs/
