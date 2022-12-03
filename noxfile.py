@@ -91,4 +91,4 @@ def lint_nb(session: nox.Session) -> None:
 def docs(session: nox.Session) -> None:
     """Build documentation."""
     session.run("pdm", "install", "-G", "doc", external=True)
-    session.run("mkdocs", "build", "--clean")
+    session.run("mkdocs", "serve")
