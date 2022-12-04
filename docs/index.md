@@ -8,6 +8,8 @@ This site contains the project documentation for the `jax-vqgan`.
 
 [Flax](https://flax.readthedocs.io/en/latest/index.html) is a high-performance neural network library for JAX that is designed for flexibility: Try new forms of training by forking an example and by modifying the training loop, not by adding features to a framework.
 
+#TODO: @WolodjaZ nie gan architekturę tylko autoencoder tory dodatkowo korzysta z dyskryminatora z architektury Ganu + źródło
+
 VQGAN (Vector Quantized Generative Adversarial Network): VQGAN is a GAN architecture, which can be used to learn and generate novel images based on previously seen data. It was first introduced for the paper [`Taming Transformers`](https://arxiv.org/abs/2012.09841) (2021). It works by first having image data directly input to a GAN to encode the feature map of the visual parts of the images. This image data is then vector quantized: a form of signal processing which encodes groupings of vectors into clusters accessible by a representative vector marking the centroid called a “codeword.” Once encoded, the vector quantized data is recorded as a dictionary of codewords, also known as a codebook. The codebook acts as an intermediate representation of the image data, which is then input as a sequence to a transformer. The transformer is then trained to model the composition of these encoded sequences as high resolution images as a generator.
 
 ![VQGAN](https://raw.githubusercontent.com/CompVis/taming-transformers/master/assets/teaser.png)
