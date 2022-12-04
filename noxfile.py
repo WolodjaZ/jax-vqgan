@@ -39,7 +39,7 @@ def coverage(session: nox.Session) -> None:
         "not training_long",
         "tests",
     )
-    session.run("coverage", "report", "--fail-under=1", "--ignore-errors")  # 90
+    session.run("coverage", "report", "--fail-under=90", "--ignore-errors")
     session.run("coverage", "erase")
 
 

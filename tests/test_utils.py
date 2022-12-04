@@ -73,7 +73,6 @@ def test_DummyDataset(mocker):
     assert data.dtype == jnp.float32
 
     # Test dataset
-    cfg.use_transforms = False
     dataset_test_class = utils.DummyDataset(train=False, dtype=dtype, config=cfg)
     mock_transform = mocker.patch.object(
         dataset_test_class, "transforms", side_effect=lambda image: {"image": image}
@@ -85,6 +84,11 @@ def test_DummyDataset(mocker):
     mock_transform.assert_not_called()
     assert data.shape == (cfg.size, cfg.size, 3)
     assert data.dtype == jnp.float32
+
+    cfg.transform = None
+    with pytest.raises(ValueError) as excinfo:
+        utils.DummyDataset(train=True, dtype=dtype, config=cfg)
+    assert "Transforms must be provided for training." in str(excinfo.value)
 
     # Clean up
     del dataset_train, dataset_test, cfg_omgega, load_confg, cfg
@@ -142,6 +146,15 @@ def test_make_img_grid():
     dataset_train = dataset_train.as_numpy_iterator()
     data = next(dataset_train)
     imgs = np.stack([data, data], axis=1).reshape(-1, *data.shape)
+    img = utils.make_img_grid(imgs, nrows=2)
+    assert img is not None
+    assert type(img) == np.ndarray
+    assert img.shape[-1] == 3
+    assert len(img.shape) == 3
+
+    # Test incorrect shape
+    data_inc = data + data[0]
+    imgs = np.stack([data_inc, data], axis=1).reshape(-1, *data.shape)
     img = utils.make_img_grid(imgs, nrows=2)
     assert img is not None
     assert type(img) == np.ndarray
@@ -222,6 +235,11 @@ def test_TensorflowDataset():
         assert data.shape == (cfg.size, cfg.size, 3)
         assert data.dtype == jnp.float32
 
+        # Fail dataset
+        cfg.dataset_name = "fail"
+        with pytest.raises(Exception):
+            dataset_train_class = utils.TensorflowDataset(train=True, dtype=dtype, config=cfg)
+
     # Clean up
     del dataset_train, dataset_test, cfg_omgega, load_confg, cfg
 
@@ -278,6 +296,21 @@ def test_resize_VQGanImageProcessor():
     input_reverted = np.ones((3, 256, 256))
     input_reverted_resized = extractor.resize(input_reverted, size={"width": 512, "height": 512})
     assert input_reverted_resized.shape == (3, 512, 512)
+    input_reverted_resized = extractor.resize(
+        input_reverted, size={"width": 512, "height": 512}, data_format="channels_first"
+    )
+    assert input_reverted_resized.shape == (3, 512, 512)
+
+    # fail resize
+    with pytest.raises(ValueError) as excinfo:
+        extractor.resize(input, size={"fail": 512, "height": 512})
+    assert "The `size` dictionary must contain the keys `height` and `width`." in str(excinfo.value)
+    with pytest.raises(ValueError) as excinfo:
+        extractor.resize(input, size={"width": 512, "fail": 512})
+    assert "The `size` dictionary must contain the keys `height` and `width`." in str(excinfo.value)
+    with pytest.raises(ValueError) as excinfo:
+        extractor.resize(input, size={"fail": 512, "fail": 512})
+    assert "The `size` dictionary must contain the keys `height` and `width`." in str(excinfo.value)
 
 
 @pytest.mark.parametrize(
@@ -312,6 +345,15 @@ def test_normalize_VQGanImageProcessor():
     input = np.asarray(input)
     input_normalized = extractor.normalize(
         input, mean=input.mean(axis=(1, 2)), std=input.std(axis=(1, 2))
+    )
+    assert input_normalized.shape == (3, 224, 224)
+    assert input_normalized.mean() == pytest.approx(0.0, abs=0.1)
+    assert input_normalized.std() == pytest.approx(1.0, abs=0.1)
+    input_normalized = extractor.normalize(
+        input,
+        mean=input.mean(axis=(1, 2)),
+        std=input.std(axis=(1, 2)),
+        data_format="channels_first",
     )
     assert input_normalized.shape == (3, 224, 224)
     assert input_normalized.mean() == pytest.approx(0.0, abs=0.1)

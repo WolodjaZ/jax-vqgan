@@ -98,7 +98,7 @@ class BaseDataset(ABC):
         Returns:
             The dataset.
         """
-        pass
+        raise NotImplementedError
 
     def __len__(self) -> int:
         """Return the length of the dataset."""

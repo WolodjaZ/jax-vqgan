@@ -11,7 +11,7 @@ If you want to start a project just install [pdm](https://pdm.fming.dev/latest/)
 - [ ] Make documentation better
 - [x] Add package and dependency manager [pdm](https://github.com/pdm-project/pdm)
 - [ ] ~~Check [jaxtyping](https://github.com/google/jaxtyping) if it time and memory optimize. If yes I think it would be great to add it.~~ I've decided not to use it because it won't provide much readability as I thought, and I don't think we need to provide more input validation in the architecture. However, it doesn't worsen performance, but I'm not fully convinced that it will be a big plus given that we will be dependent on this framework. If anyone has a different opinion pls share maybe I am wrong.
-- [ ] Make more tests to make coverage test percentage higher 😏
+- [x] Make more tests to make coverage test percentage higher 😏. For now at least 90% is enough.
 - [ ] Test distributed learning
 - [ ] Add pip deployment
 - [ ] Add hugging face deployment
