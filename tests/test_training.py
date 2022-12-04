@@ -7,7 +7,7 @@ import pytest
 from jax.tree_util import tree_all, tree_map
 from omegaconf import OmegaConf
 
-from modules import config, training, utils, vqgan
+from modules import config, losses, training, utils, vqgan
 
 CONFIG_FILE = "tests/config_test.yaml"
 DATACONFIG_FILE = "tests/dataconfig_test.yaml"
@@ -57,6 +57,29 @@ def test_TrainerVQGan_initalization(LOAD_CONFIG, recon_loss, disc_loss):
         assert model.state.tx is None
         assert model.state_disc is not None
         assert model.state_disc.tx is None
+
+    del model, cfg, load_confg
+
+
+def test_TrainerVQGan_fail_loss_initalization(LOAD_CONFIG):
+    """Test that the TrainerVQGan can't be initialized."""
+    # test loading the config file
+    load_confg = OmegaConf.to_container(LOAD_CONFIG)
+    load_confg["recon_loss"] = "fake"
+    load_confg["disc_loss"] = "fake"
+
+    with tempfile.TemporaryDirectory() as dp:
+        load_confg["save_dir"] = os.path.join(dp, load_confg["save_dir"])
+        load_confg["log_dir"] = os.path.join(dp, load_confg["log_dir"])
+        cfg = config.TrainConfig(**load_confg)
+        assert cfg is not None
+        type(cfg) == config.TrainConfig
+        # test the TrainerModule initialization
+        model = training.TrainerVQGan(cfg)
+        model.recon_loss_fn is not None
+        model.recon_loss_fn = losses.l1_loss
+        model.disc_loss_fn is not None
+        model.disc_loss_fn = losses.disc_loss_hinge
 
     del model, cfg, load_confg
 

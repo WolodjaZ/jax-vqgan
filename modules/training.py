@@ -352,8 +352,9 @@ class TrainerVQGan(TrainerModule):
         else:
             logger.warning(
                 f"""Reconstruction loss function {self.module_config.recon_loss} not supported.
-                Will be used default l2 loss instead."""
+                Will be used default l1 loss instead."""
             )
+            self.recon_loss_fn = losses.l1_loss
         # Train state for discriminator
         self.model_disc: FlaxPreTrainedModel = vqgan.VQGanDiscriminator(
             self.module_config.disc_hparams
@@ -367,6 +368,7 @@ class TrainerVQGan(TrainerModule):
                 f"""Discriminator loss function {self.module_config.disc_loss} not supported.
                 Will be used default hinge loss instead."""
             )
+            self.disc_loss_fn = losses.disc_loss_hinge
         self.state_disc = TrainStateDisc(
             step=0,
             apply_fn=self.model_disc.__call__,
