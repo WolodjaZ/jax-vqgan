@@ -14,11 +14,11 @@ VQGAN (Vector Quantized Generative Adversarial Network): VQGAN is a GAN architec
 
 ![VQGAN](https://raw.githubusercontent.com/CompVis/taming-transformers/master/assets/teaser.png)
 
-This project basicly provide implementation of VQGAN in JAX/Flax with Trainer module, dataset loading and Tensorboard logging. We will try to add in future ability to also ship model into [Hugging Face](https://huggingface.co). This is my one of the first well done project so if you have some advices how to improve or you see some problem please make issues or make pull requests 😊(evil smile face).
+This project basically provides the implementation of VQGAN in JAX/Flax with the Trainer module, dataset loading and Tensorboard logging. In the future, we will try to add the ability to ship model into [Hugging Face](https://huggingface.co). This is my one of the first well done project, so if you have any advice how to improve or you see some problem, please, make an issue or pull request 😊(evil smiley face).
 
 ## Table Of Contents
 
-The documentation follows the best practice for project documentation as described by Daniele Procida in the [Diátaxis documentation framework](https://diataxis.fr/) and consists of four separate parts and [changelog](https://keepachangelog.com/en/1.0.0/):
+The documentation follows the best practices for project documentation as described by Daniele Procida in the [Diátaxis documentation framework](https://diataxis.fr/) and consists of four separate parts and the [changelog](https://keepachangelog.com/en/1.0.0/):
 
 1. [Tutorials](tutorials.md)
 2. [How-To Guides](how-to-guides.md)
@@ -28,7 +28,7 @@ The documentation follows the best practice for project documentation as describ
 
 ## Acknowledgements
 
-I want to thank me, myself and I 🥸. But honestly I am thankful for the `Taming Transformers` authors for this marvelous architecture and this [repo](https://github.com/patil-suraj/vqgan-jax) from which I based my implementation "stole some code one can say" 👤💰.
-FURTHERMORE YOU MUST WATCH THIS [TIKTOK USER](https://www.tiktok.com/@niebodieta?_t=8XZwt4OIP1q&_r=1)
-AND LASTLY I advise to listen to this song as this song was my coding song for this project. Click on Captain Cat Sparrow  made by [DALLE 2](https://openai.com/dall-e-2/) to listen it 🎧.
+I want to thank me, myself and I 🥸. No, but honestly, I am thankful to the `Taming Transformers` authors for this marvelous architecture and this [repo](https://github.com/patil-suraj/vqgan-jax), on which I based my implementation (or stole some code, one can say 👤💰).
+FURTHERMORE, YOU MUST WATCH THIS [TIKTOK USER](https://www.tiktok.com/@niebodieta?_t=8XZwt4OIP1q&_r=1)
+AND LASTLY, I advise to listen to it, as it was my coding song for this project. Click on Captain Cat Sparrow made by [DALLE 2](https://openai.com/dall-e-2/) to listen it 🎧.
 [![Captain Cat Sparrow](https://preview.redd.it/r70xbipvlgl91.jpg?width=640&crop=smart&auto=webp&s=5027a08a701c678299569207a2b9b964eb324f59)](https://www.youtube.com/watch?v=0C3zgYW_FAM "Island in The Sun - Click to Listen!")
