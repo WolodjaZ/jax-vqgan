@@ -1,6 +1,6 @@
-This tutorial demonstrate how to train VQGAN in JAX/Flax using our pipeline. For the tutorial we will train on [imagenette](https://www.tensorflow.org/datasets/catalog/imagenette) datasets.
+This tutorial demonstrates how to train VQGAN in JAX/Flax using our pipeline. For the tutorial, we will train on [imagenette](https://www.tensorflow.org/datasets/catalog/imagenette) datasets.
 
-Note: This notebook will be re-evaluated when I get access to GPU to fully train this model, for now I am poor jobless person 😞.
+Note: This notebook will be reevaluated when I get access to GPU in order to fully train this model, but for now I am poor jobless person 😞.
 
 
 ```python
@@ -13,7 +13,7 @@ Note: This notebook will be re-evaluated when I get access to GPU to fully train
 
 ## 1. Imports
 
-Import OmegaConf, LoadConfig, TrainerVQGan, DataLoader, TensorflowDataset. [OmegaConf](https://omegaconf.readthedocs.io/en/2.2_branch/#) is a library which will handle loading yaml file with our configs. Our pipeline is managed basically with yaml files specifying architecture, trainer, dataset loading and processing. LoadConfig is our dataclass config which will take omegaconf dict and prepare configs for training and data loading. TensorflowDataset and DataLoader are our objects for preparing datasets and creating something similar to PyTorch data loaders. Lastly TrainerVQGan is object which will take care of creating models, training them and logging.
+Import OmegaConf, LoadConfig, TrainerVQGan, DataLoader, and TensorflowDataset. [OmegaConf](https://omegaconf.readthedocs.io/en/2.2_branch/#) is a library which will handle loading the yaml file with our configs. Our pipeline is basically managed with yaml files that specify yhe architecture, trainer, dataset loading, and processing. LoadConfig is our dataclass config, which will take omegaconf dict and prepare configs for training and data loading. TensorflowDataset and DataLoader are our objects for preparing datasets and creating something similar to PyTorch data loaders. Lastly, TrainerVQGan is the object that will take care of creating, training, and logging models.
 
 
 ```python
@@ -36,12 +36,12 @@ from modules.utils import DataLoader, TensorflowDataset
 
 
 ## 2. Load configs
-Now lets load our training configs. For now we created three sample configs located in `conf` folder:
+Now let's load our training configs. For now we created three sample configs located in the `conf` folder:
 - `config.yaml` my training config
-- `imagenet.yaml` official training config for training on imagenet dataset
-- `gumbel.yaml` official training config with Gumbel-max trick on imagenet dataset
+- `imagenet.yaml` official training config for training on the imagenet dataset
+- `gumbel.yaml` official training config with Gumbel-max trick on the imagenet dataset
 
-You can create your own config if you want to but for this tutorial we will use `config.yaml`.
+You can create your own config if you want to, but for this tutorial we will use `config.yaml`.
 
 
 ```python
@@ -139,7 +139,7 @@ print(OmegaConf.to_yaml(cfg_omega))
 
 
 
-We see that we have two sections `train` which corresponds to setting trainer and architectures and `data` specifying datasets, augmentation and preprocessing.
+We can see that there are two `train` sections, which corresponds to setting the trainer and architectures, and `data` specifying the datasets, augmentation and preprocessing.
 
 
 ```python
@@ -191,10 +191,10 @@ print(cfg)
     , save_dir='../../datasets/vqgan_model_save', log_dir='../../datasets/vqgan_log_dir', check_val_every_n_epoch=1, log_img_every_n_epoch=5, input_shape=(256, 256, 3), codebook_weight=1.0, monitor='total_loss', recon_loss='l1', disc_loss='hinge', disc_weight=0.8, num_epochs=10, dtype=<class 'jax.numpy.float32'>, distributed=False, seed=42, optimizer=GradientTransformation(init=<function chain.<locals>.init_fn at 0x7fb5569c9e50>, update=<function chain.<locals>.update_fn at 0x7fb5569c9f70>), optimizer_disc=GradientTransformation(init=<function chain.<locals>.init_fn at 0x7fb5569e6310>, update=<function chain.<locals>.update_fn at 0x7fb5569e63a0>), disc_start=7, temp_scheduler=None), data=DataConfig(train_params=DataParams(batch_size=4, shuffle=True), test_params=DataParams(batch_size=8, shuffle=False), dataset_name='imagenette', dataset_root='../../datasets', transform={'__version__': '1.3.0', 'transform': {'__class_fullname__': 'Compose', 'additional_targets': {}, 'bbox_params': None, 'keypoint_params': None, 'p': 1.0, 'transforms': [{'__class_fullname__': 'RandomBrightnessContrast', 'always_apply': False, 'brightness_by_max': True, 'brightness_limit': [-0.1, 0.1], 'contrast_limit': [-0.2, 0.2], 'p': 0.5}, {'__class_fullname__': 'HorizontalFlip', 'always_apply': False, 'p': 0.5}]}}, size=256))
 
 
-Now if you look more closely and compare two outputs you will see some inequalities, because `LoadConfig` does some preprocessing and instantiating some objects.
+Now if you look more closely and compare the two outputs, you will see some inequalities because `LoadConfig` does some preprocessing and instantiating some objects.
 
 ## 3. Prepare datasets and dataloaders
-Having our train and data configs now lets create datasets and dataloaders.
+With our train and data configs, now let's create the datasets and dataloaders.
 
 
 ```python
@@ -204,7 +204,7 @@ print(cfg.data)
     DataConfig(train_params=DataParams(batch_size=4, shuffle=True), test_params=DataParams(batch_size=8, shuffle=False), dataset_name='imagenette', dataset_root='../../datasets', transform={'__version__': '1.3.0', 'transform': {'__class_fullname__': 'Compose', 'additional_targets': {}, 'bbox_params': None, 'keypoint_params': None, 'p': 1.0, 'transforms': [{'__class_fullname__': 'RandomBrightnessContrast', 'always_apply': False, 'brightness_by_max': True, 'brightness_limit': [-0.1, 0.1], 'contrast_limit': [-0.2, 0.2], 'p': 0.5}, {'__class_fullname__': 'HorizontalFlip', 'always_apply': False, 'p': 0.5}]}}, size=256)
 
 
-Config for data have information about train and test datasets, size of the images and augmentations which will be used with [albumentations]() frameworks
+The Config for data has information about train and test datasets as well as the size of the images and augmentations, which will be used with the [albumentations]() frameworks.
 
 
 ```python
@@ -217,7 +217,7 @@ dataset_test_class = TensorflowDataset(train=False, dtype=cfg.train.dtype, confi
     In train config we have information about data datatype. We use <class 'jax.numpy.float32'>
 
 
-Let`s look on data.
+Let`s look at the data.
 
 
 ```python
@@ -243,7 +243,7 @@ print(f"Our data have shape: {data.shape} and data type: {data.dtype}")
     2022-11-23 14:40:16.429179: W tensorflow/core/kernels/data/cache_dataset_ops.cc:856] The calling iterator did not fully read the dataset being cached. In order to avoid unexpected truncation of the dataset, the partially cached contents of the dataset  will be discarded. This can happen if you have an input pipeline similar to `dataset.cache().take(k).repeat()`. You should use `dataset.take(k).cache().repeat()` instead.
 
 
-We need to post process data because our data for modal is standardized and normalized.
+We need to apply post processing to our data because our output data is standardised and normalised with imagenet std and mean.
 
 
 ```python
@@ -258,7 +258,7 @@ plt.show()
 
 
 
-Now let's look at dataloader data
+Now let's look at the dataloader data
 
 
 ```python
@@ -302,24 +302,24 @@ plt.show()
 
 
 
-## 4. Prepare train module
+## 4. Prepare the train module
 
-You don't need to create architecture, inicialize it etc. Because for doing it we have our **trainer** `TrainerVQGan`. There we have prepared training, logging to Tensorboard and checkpointing it. Additionaly pmaping and jiting we also took care of it for you. THANK YOU 😤.
+You don't need to create any or initialize any architecture because we have our **trainer** `TrainerVQGan` that does it.We additionaly as functionalities for Training, logging to tensorboard and checkpoiting your model. YOU'RE WELCOME 😤.
 
 
 ```python
 model = TrainerVQGan(module_config=cfg.train)
 ```
 
-## 5 Let`s start trining ✊
+## 5 Let`s start training ✊
 
 
 ```python
 model.train_model(loader_train, loader_val)
 ```
 
-## 6. What now we can do
-You can now save model, but we always save model when we gat better results. You can also load model.
+## 6. What we can do now
+You can save the model now, but we always do it when we get better results. You can also load it.
 
 
 ```python
@@ -327,7 +327,7 @@ if model.checkpoint_exists():
     model.load_model()
 ```
 
-One can also see tensorboard results
+You can also see the tensorboard results.
 
 
 ```python
@@ -336,7 +336,7 @@ One can also see tensorboard results
 ```
 
 ## 7. Lets look at the model
-Now lets take the model and look at the samples
+Now let's take the model and look at the samples.
 
 
 ```python
@@ -383,6 +383,6 @@ plt.show()
 
 
 
-Congrats 👏👏👏! You made it to the end of the trining example. You can revisit the same example, but structured differently as a couple of Python modules, test modules, config files, another Colab, and documentation in Git repo:
+Congrats 👏👏👏! You've made it to the end of the training example. You can revisit the same example, but structured differently as a couple of Python modules, test modules, config files, another Colab, and documentation in the Git repo:
 
 <https://github.com/WolodjaZ/jax-vqgan/blob/main/notebooks/example.ipynb>
